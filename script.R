@@ -15,10 +15,11 @@ library("patchwork")
 library('readxl')
 library('janitor')
 library('openxlsx')
+library(rstatix)
 
 ####FILE PATH####
 
-path <- "S:/Clinical Services/Research Assistants/Tecnis Odyssey/Bilateral Odyssey vs Mix PureSee/"
+path <- "S:/Clinical Services/Research Assistants/Bilateral-and-Mix-Odyssey-and-PureSee/"
 
 con <- DBI::dbConnect(odbc::odbc(), 
                       Driver = "SQL Server", 
@@ -26,8 +27,28 @@ con <- DBI::dbConnect(odbc::odbc(),
                       Trusted_Connection = "True")
 
 mindate <- '2024-01-01'
-maxdate <- '2026-09-30'
+maxdate <- '2026-02-28'
 surgerytype <- 2
+
+chisq_warns <- function(x, y = NULL, ...) {
+  flagged <- FALSE
+  withCallingHandlers(
+    {
+      if (is.null(y)) {
+        chisq.test(x, ...)
+      } else {
+        chisq.test(x, y, ...)
+      }
+    },
+    warning = function(w) {
+      if (grepl("Chi-squared approximation may be incorrect", conditionMessage(w))) {
+        flagged <<- TRUE
+        invokeRestart("muffleWarning")  # suppress it so it doesn't print/propagate
+      }
+    }
+  )
+  flagged
+}
 
 #### SQL Query ####
 
@@ -107,10 +128,10 @@ data <- data %>%
 ##### Getting max amount of PreOp Data ####
 data$max <- rowSums(!is.na(data %>% select(ExamDateTime, EyeID, DominantEyeID, Motivation, Target, 
                                            Sphere, Cyl, Keratometry_Power_1, Keratometry_Power_2, 
-                                           UCDVA_SM, UCDVA_LogMAR, UCDVA_N, UCIVA_SM, UCIVA_LogMAR, 
-                                           UCIVA_N, UCNVA_SM, UCNVA_LogMAR, UCNVA_N, Binoc_UCDVA_SM, 
-                                           Binoc_UCDVA_LM, Binoc_UCIVA_SM, Binoc_UCIVA_LM, Binoc_UCIVA_N, 
-                                           Binoc_UCNVA_SM, Binoc_UCNVA_LM, Binoc_UCNVA_N, BCDVA_LM, 
+                                           UCDVA_SM, UCDVA_LM, UCIVA_SM, UCIVA_LM, 
+                                           UCNVA_SM, UCNVA_LM, Binoc_UCDVA_SM, 
+                                           Binoc_UCDVA_LM, Binoc_UCIVA_SM, Binoc_UCIVA_LM, 
+                                           Binoc_UCNVA_SM, Binoc_UCNVA_LM, BCDVA_LM, 
                                            Lens)))
 
 data <- data %>%
@@ -138,24 +159,85 @@ data$Sph_ach_M1 <- round(data$Sphere - data$Sph_M1, digits = 2)
 data$KTest <- data$Keratometry_Power_1 - data$Keratometry_Power_2
 
 data <- data %>%
-  mutate(M1_Binoc_UCDVA_D = case_when(M1_Binoc_UCDVA_D=="CF" ~ 0.016,
-                                      M1_Binoc_UCDVA_D=="HM" ~ 0.004,
-                                      M1_Binoc_UCDVA_D=="POL" ~ 0.002,
-                                      M1_Binoc_UCDVA_D=="NPOL" ~ 0.001,
-                                      .default = as.numeric(M1_Binoc_UCDVA_D)),
-         M1_Binoc_BCDVA_D = case_when(M1_Binoc_BCDVA_D=="CF" ~ 0.016,
-                                      M1_Binoc_BCDVA_D=="HM" ~ 0.004,
-                                      M1_Binoc_BCDVA_D=="POL" ~ 0.002,
-                                      M1_Binoc_BCDVA_D=="NPOL" ~ 0.001,
-                                      .default = as.numeric(M1_Binoc_BCDVA_D)),
-         Binoc_BCDVA_D = case_when(Binoc_BCDVA_D=="CF" ~ 0.016,
-                                      Binoc_BCDVA_D=="HM" ~ 0.004,
-                                      Binoc_BCDVA_D=="POL" ~ 0.002,
-                                      Binoc_BCDVA_D=="NPOL" ~ 0.001,
-                                      .default = as.numeric(Binoc_BCDVA_D)))
+  mutate(UCDVA_LM = case_when(UCDVA_LM=="CF" ~ 1.80,
+                              UCDVA_LM=="HM" ~ 2.40,
+                              UCDVA_LM=="POL" ~ 2.70,
+                              UCDVA_LM=="NPOL" ~ 3.00,
+                              .default = as.numeric(UCDVA_LM)),
+         UCIVA_LM = case_when(UCIVA_LM=="CF" ~ 1.80,
+                              UCIVA_LM=="HM" ~ 2.40,
+                              UCIVA_LM=="POL" ~ 2.70,
+                              UCIVA_LM=="NPOL" ~ 3.00,
+                              .default = as.numeric(UCIVA_LM)),
+         UCNVA_LM= case_when(UCNVA_LM=="CF" ~ 1.80,
+                             UCNVA_LM=="HM" ~ 2.40,
+                             UCNVA_LM=="POL" ~ 2.70,
+                             UCNVA_LM=="NPOL" ~ 3.00,
+                              .default = as.numeric(UCNVA_LM)),
+         BCDVA_LM = case_when(BCDVA_LM=="CF" ~ 1.80,
+                              BCDVA_LM=="HM" ~ 2.40,
+                              BCDVA_LM=="POL" ~ 2.70,
+                              BCDVA_LM=="NPOL" ~ 3.00,
+                              .default = as.numeric(BCDVA_LM)),
+         Binoc_UCDVA_LM= case_when(Binoc_UCDVA_LM=="CF" ~ 1.80,
+                                   Binoc_UCDVA_LM=="HM" ~ 2.40,
+                                   Binoc_UCDVA_LM=="POL" ~ 2.70,
+                                   Binoc_UCDVA_LM=="NPOL" ~ 3.00,
+                                   .default = as.numeric(Binoc_UCDVA_LM)),
+         Binoc_BCDVA_LM = case_when(Binoc_BCDVA_LM=="CF" ~ 1.80,
+                                    Binoc_BCDVA_LM=="HM" ~ 2.40,
+                                    Binoc_BCDVA_LM=="POL" ~ 2.70,
+                                    Binoc_BCDVA_LM=="NPOL" ~ 3.00,
+                                    .default = as.numeric(Binoc_BCDVA_LM)),
+         M1_UCIVA_LM = case_when(M1_UCIVA_LM=="CF" ~ 1.80,
+                                 M1_UCIVA_LM=="HM" ~ 2.40,
+                                 M1_UCIVA_LM=="POL" ~ 2.70,
+                                 M1_UCIVA_LM=="NPOL" ~ 3.00,
+                                 .default = as.numeric(M1_UCIVA_LM)),
+         M1_UCNVA_LM = case_when(M1_UCNVA_LM=="CF" ~ 1.80,
+                                 M1_UCNVA_LM=="HM" ~ 2.40,
+                                 M1_UCNVA_LM=="POL" ~ 2.70,
+                                 M1_UCNVA_LM=="NPOL" ~ 3.00,
+                                 .default = as.numeric(M1_UCNVA_LM)),
+         M1_BCDVA_LM = case_when(M1_BCDVA_LM=="CF" ~ 1.80,
+                                 M1_BCDVA_LM=="HM" ~ 2.40,
+                                 M1_BCDVA_LM=="POL" ~ 2.70,
+                                 M1_BCDVA_LM=="NPOL" ~ 3.00,
+                                 .default = as.numeric(M1_BCDVA_LM)),
+         M1_Binoc_UCDVA_LM = case_when(M1_Binoc_UCDVA_LM=="CF" ~ 1.80,
+                                       M1_Binoc_UCDVA_LM=="HM" ~ 2.40,
+                                       M1_Binoc_UCDVA_LM=="POL" ~ 2.70,
+                                       M1_Binoc_UCDVA_LM=="NPOL" ~ 3.00,
+                                       .default = as.numeric(M1_Binoc_UCDVA_LM)),
+         M1_Binoc_BCDVA_LM = case_when(M1_Binoc_BCDVA_LM=="CF" ~ 1.80,
+                                       M1_Binoc_BCDVA_LM=="HM" ~ 2.40,
+                                       M1_Binoc_BCDVA_LM=="POL" ~ 2.70,
+                                       M1_Binoc_BCDVA_LM=="NPOL" ~ 3.00,
+                                       .default = as.numeric(M1_Binoc_BCDVA_LM)),
+         M1_Binoc_UCIVA_LM = case_when(M1_Binoc_UCIVA_LM=="CF" ~ 1.80,
+                                       M1_Binoc_UCIVA_LM=="HM" ~ 2.40,
+                                       M1_Binoc_UCIVA_LM=="POL" ~ 2.70,
+                                       M1_Binoc_UCIVA_LM=="NPOL" ~ 3.00,
+                                       .default = as.numeric(M1_Binoc_UCIVA_LM)),
+         M1_Binoc_UCNVA_LM = case_when(M1_Binoc_UCNVA_LM=="CF" ~ 1.80,
+                                       M1_Binoc_UCNVA_LM=="HM" ~ 2.40,
+                                       M1_Binoc_UCNVA_LM=="POL" ~ 2.70,
+                                       M1_Binoc_UCNVA_LM=="NPOL" ~ 3.00,
+                                       .default = as.numeric(M1_Binoc_UCNVA_LM))
+  )
 
 data$Model <- gsub("\\bAMO\\b", "J&J", data$Model)
 data$Exch_Model <- gsub("\\bAMO\\b", "J&J", data$Exch_Model)
+
+# manually making the binocular stuffs
+data <- data %>%
+  group_by(PatientID) %>%
+  arrange(M1_Binoc_BCDVA_LM) %>%
+  mutate(M1_Binoc_BCDVA_LM = case_when(is.na(M1_Binoc_BCDVA_LM) ~ first(M1_BCDVA_LM), .default=M1_Binoc_BCDVA_LM)) %>%
+  arrange(M1_Binoc_UCDVA_LM) %>%
+  mutate(M1_Binoc_UCDVA_LM = case_when(is.na(M1_Binoc_UCDVA_LM) ~ first(M1_BCDVA_LM), .default=M1_Binoc_UCDVA_LM)) %>%
+  arrange(M1_Binoc_UCNVA_LM) %>%
+  mutate(M1_Binoc_UCNVA_LM = case_when(is.na(M1_Binoc_UCNVA_LM) ~ first(M1_BCDVA_LM), .default=M1_Binoc_UCNVA_LM))
 
 data <- data %>% ungroup()
 
@@ -175,33 +257,26 @@ if (dim(test[which(test$Freq>1),])[1]>1){
 }
 
 #### DATA PREPARATION ####
-##### Data Conditions ####
-# data <- data %>% filter(PriorLVC==1)
-data <- data[which(is.na(data$Complication)),]
-data <- data[which(!is.na(data$Month1PostOp)),]
-data <- data[which(!is.na(data$M1_SurveyDate)),]
-data <- data[which(data$Age>=45),]
-data$MSE <- round(data$Sphere + (data$Cyl/2), digits = 2)
-data$MSE_M1 <- round(data$Sph_M1 + (data$Cyl_M1/2), digits = 2)
-
-data <- data %>%
-  filter((EyeID==DominantEyeID & abs(MSE_M1) <= 0.5) | (EyeID!=DominantEyeID & abs(MSE_M1) <= 1))
+##### Creating Bilat/Mix ####
 
 data$LensType <- NA
 data$LensType[grep("Odyssey", data$Model,ignore.case=TRUE)] <- "Odyssey"
 data$LensType[grep("PureSee", data$Model,ignore.case=TRUE)] <- "PureSee"
 
-##### Creating Bilat/Mix ####
 bilat1 <- data %>%
   filter(LensType=="Odyssey") %>%
+  group_by(PatientID) %>%
   filter(n_distinct(EyeID) == 2) %>%
+  ungroup() %>%
   mutate(SurgeryLens = "Bilateral Odyssey") %>%
   select(PatientID, SurgeryDateTime, SurgeryLens)
-
+ 
 bilat2 <- data %>%
   filter(LensType=="PureSee") %>%
+  group_by(PatientID) %>%
   filter(n_distinct(EyeID) == 2) %>%
-  mutate(SurgeryLens = "Bilateral Odyssey") %>%
+  ungroup() %>%
+  mutate(SurgeryLens = "Bilateral PureSee") %>%
   select(PatientID, SurgeryDateTime, SurgeryLens)
 
 # puresee in dominant eye, odyssey in non dominant eye
@@ -219,6 +294,20 @@ mix <- data %>%
 temp <- rbind(bilat1, bilat2, mix)
 
 data <- merge(data, temp, by=c("PatientID","SurgeryDateTime")) %>% unique()
+
+##### Data Conditions ####
+data <- data %>% filter(PriorLVC==1)
+# data <- data[which(is.na(data$Complication)),]
+data <- data[which(!is.na(data$Month1PostOp)),]
+data <- data[which(!is.na(data$M1_SurveyDate)),]
+# data <- data[which(data$Age>=45),]
+data$MSE <- round(data$Sphere + (data$Cyl/2), digits = 2)
+data$MSE_M1 <- round(data$Sph_M1 + (data$Cyl_M1/2), digits = 2)
+
+data <- data %>%
+  group_by(PatientID) %>%
+  filter(n()==2) %>%
+  ungroup()
 
 test <- as.data.frame(table(data$PatientID, data$EyeID)) %>% filter(Freq>1)
 if (dim(test)[1]>0){view(test)
@@ -246,7 +335,7 @@ if (dim(test)[1]>0){
   stop("There are patients who do not have any Motivations.")
 }
 
-write.xlsx(data %>% select(PatientID, EyeID, Reason, M1_UCDVA_LM),
+write.xlsx(data %>% select(PatientID, EyeID, Reason, M1_Binoc_UCDVA_LM),
            "S:\\Clinical Services\\Research Assistants\\Tecnis Odyssey\\Bilateral Odyssey vs Mix PureSee\\tables\\pxsreasons.xlsx")
 
 ##### quick peq test ####
@@ -609,1297 +698,418 @@ cyl <- cyl %>%
   select(-Freq) %>%
   pivot_wider(names_from = "Var2", values_from = "percent")
 
-#### Pre UCDVA vs Post UCDVA 1 Month Bilateral Odyssey ####
+#### Pre UCDVA vs Post UCDVA 1 Month ####
 
 month1 <- data %>%
-  filter(SurgeryLens=="Bilateral Odyssey") %>%
-  select(PatientID, Binoc_UCDVA_SM, M1_Binoc_UCDVA_SM) %>%
+  select(PatientID, Binoc_UCDVA_LM, M1_Binoc_UCDVA_LM, SurgeryLens) %>%
   filter(complete.cases(.)) %>%
-  unique()
+  unique() %>%
+  mutate(Binoc_UCDVA_LM=as.numeric(Binoc_UCDVA_LM),
+         M1_Binoc_UCDVA_LM=as.numeric(M1_Binoc_UCDVA_LM))
 
-month <- month1 %>% select(PatientID, Binoc_UCDVA_SM)
-month <- as.data.frame(table(month$Binoc_UCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
+month <- month1 %>%
+  select(PatientID, Binoc_UCDVA_LM, SurgeryLens) %>%
+  group_by(Binoc_UCDVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
 
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-mu26 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120")
-mu28 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF"| month$Var1 == "HM"| month$Var1 == "POL")
-
-mu5$Group <- c('6/5 or better')
+mu5 <- subset(month, month$Binoc_UCDVA_LM <= -0.08)
 mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/5 or better')
 
-mu6$Group <- c('6/6 or better')
+mu6 <- subset(month, month$Binoc_UCDVA_LM <= 0)
 mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/6 or better')
 
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$Binoc_UCDVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu11 <- subset(month, month$Binoc_UCDVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
 
-mu23$Group <- c('6/60 or better')
+mu23 <- subset(month, month$Binoc_UCDVA_LM <= 1)
 mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/60 or better')
 
-mu26$Group <- c('6/120 or better')
+mu26 <- subset(month, month$Binoc_UCDVA_LM <= 1.3)
 mu26 <- mu26 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/120 or better')
 
-mu28$Group <- c('CF or better')
+mu28 <- subset(month, month$Binoc_UCDVA_LM <= 1.8)
 mu28 <- mu28 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'CF or better')
 
-mu30$Group <- c('HM or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu29 <- subset(month, month$Binoc_UCDVA_LM <= 2.4)
+mu29 <- mu29 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'HM or better')
 
-pre <- rbind(mu5, mu6, mu7, mu12, mu23, mu26, mu28, mu30)
+pre <- rbind(mu5, mu6, mu7, mu11, mu23, mu26, mu28, mu29)
 pre$Type <- "Pre-Op UCDVA"
 
-month <- month1 %>% select(PatientID, M1_Binoc_UCDVA_SM)
-month <- as.data.frame(table(month$M1_Binoc_UCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
+month <- month1 %>%
+  select(PatientID, M1_Binoc_UCDVA_LM, SurgeryLens) %>%
+  group_by(M1_Binoc_UCDVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
 
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-mu26 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120")
-mu28 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF"| month$Var1 == "HM"| month$Var1 == "POL")
-
-mu5$Group <- c('6/5 or better')
+mu5 <- subset(month, month$M1_Binoc_UCDVA_LM <= -0.08)
 mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/5 or better')
 
-mu6$Group <- c('6/6 or better')
+mu6 <- subset(month, month$M1_Binoc_UCDVA_LM <= 0)
 mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/6 or better')
 
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$M1_Binoc_UCDVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu11 <- subset(month, month$M1_Binoc_UCDVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
 
-mu23$Group <- c('6/60 or better')
+mu23 <- subset(month, month$M1_Binoc_UCDVA_LM <= 1)
 mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/60 or better')
 
-mu26$Group <- c('6/120 or better')
+mu26 <- subset(month, month$M1_Binoc_UCDVA_LM <= 1.3)
 mu26 <- mu26 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/120 or better')
 
-mu28$Group <- c('CF or better')
+mu28 <- subset(month, month$M1_Binoc_UCDVA_LM <= 1.8)
 mu28 <- mu28 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'CF or better')
 
-mu30$Group <- c('HM or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu29 <- subset(month, month$M1_Binoc_UCDVA_LM <= 2.4)
+mu29 <- mu29 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'HM or better')
 
-post <- rbind(mu5, mu6, mu7, mu12, mu23, mu26, mu28, mu30)
+post <- rbind(mu5, mu6, mu7, mu11, mu23, mu26, mu28, mu29)
 post$Type <- "Post-Op UCDVA"
 
-prepost_ucdva_o <- rbind(pre, post)
-prepost_ucdva_o <- subset(prepost_ucdva_o, select = -c(Freq))
-prepost_ucdva_o <- pivot_wider(prepost_ucdva_o, names_from = "Type", values_from = "percent")
+prepost_ucdva <- rbind(pre, post) %>%
+  select(-n) %>%
+  pivot_wider(names_from="Type", values_from="percent") %>%
+  select(group, `Pre-Op UCDVA`, `Post-Op UCDVA`, SurgeryLens)
 
 
-#### Pre UCDVA vs Post UCDVA 1 Month Bilateral PureSee ####
+#### Pre BCDVA vs Post UCDVA 1 Month ####
 month1 <- data %>%
-  filter(SurgeryLens=="Bilateral PureSee") %>%
-  select(PatientID, Binoc_UCDVA_SM, M1_Binoc_UCDVA_SM) %>%
+  select(PatientID, Binoc_BCDVA_LM, M1_Binoc_UCDVA_LM, SurgeryLens) %>%
   filter(complete.cases(.)) %>%
-  unique()
+  unique() %>%
+  mutate(Binoc_BCDVA_LM=as.numeric(Binoc_BCDVA_LM),
+         M1_Binoc_UCDVA_LM=as.numeric(M1_Binoc_UCDVA_LM))
 
-month <- month1 %>% select(PatientID, Binoc_UCDVA_SM)
-month <- as.data.frame(table(month$Binoc_UCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
+month <- month1 %>%
+  select(PatientID, Binoc_BCDVA_LM, SurgeryLens) %>%
+  group_by(Binoc_BCDVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
 
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-mu26 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120")
-mu28 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF"| month$Var1 == "HM"| month$Var1 == "POL")
-
-mu5$Group <- c('6/5 or better')
+mu5 <- subset(month, month$Binoc_BCDVA_LM <= -0.08)
 mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/5 or better')
 
-mu6$Group <- c('6/6 or better')
+mu6 <- subset(month, month$Binoc_BCDVA_LM <= 0)
 mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/6 or better')
 
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$Binoc_BCDVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu11 <- subset(month, month$Binoc_BCDVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
 
-mu23$Group <- c('6/60 or better')
+mu23 <- subset(month, month$Binoc_BCDVA_LM <= 1)
 mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/60 or better')
 
-mu26$Group <- c('6/120 or better')
+mu26 <- subset(month, month$Binoc_BCDVA_LM <= 1.3)
 mu26 <- mu26 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/120 or better')
 
-mu28$Group <- c('CF or better')
+mu28 <- subset(month, month$Binoc_BCDVA_LM <= 1.8)
 mu28 <- mu28 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'CF or better')
 
-mu30$Group <- c('HM or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu29 <- subset(month, month$Binoc_BCDVA_LM <= 2.4)
+mu29 <- mu29 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'HM or better')
 
-pre <- rbind(mu5, mu6, mu7, mu12, mu23, mu26, mu28, mu30)
-pre$Type <- "Pre-Op UCDVA"
-
-month <- month1 %>% select(PatientID, M1_Binoc_UCDVA_SM)
-month <- as.data.frame(table(month$M1_Binoc_UCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-mu26 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120")
-mu28 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF"| month$Var1 == "HM"| month$Var1 == "POL")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu26$Group <- c('6/120 or better')
-mu26 <- mu26 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu28$Group <- c('CF or better')
-mu28 <- mu28 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('HM or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-post <- rbind(mu5, mu6, mu7, mu12, mu23, mu26, mu28, mu30)
-post$Type <- "Post-Op UCDVA"
-
-prepost_ucdva_p <- rbind(pre, post)
-prepost_ucdva_p <- subset(prepost_ucdva_p, select = -c(Freq))
-prepost_ucdva_p <- pivot_wider(prepost_ucdva_p, names_from = "Type", values_from = "percent")
-
-#### Pre UCDVA vs Post UCDVA 1 Month Mix and Match ####
-
-month1 <- data %>%
-  filter(SurgeryLens=="Mix and Match") %>%
-  select(PatientID, Binoc_UCDVA_SM, M1_Binoc_UCDVA_SM) %>%
-  filter(complete.cases(.)) %>%
-  unique()
-
-month <- month1 %>% select(PatientID, Binoc_UCDVA_SM)
-month <- as.data.frame(table(month$Binoc_UCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-mu26 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120")
-mu28 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF"| month$Var1 == "HM"| month$Var1 == "POL")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu26$Group <- c('6/120 or better')
-mu26 <- mu26 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu28$Group <- c('CF or better')
-mu28 <- mu28 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('HM or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-pre <- rbind(mu5, mu6, mu7, mu12, mu23, mu26, mu28, mu30)
-pre$Type <- "Pre-Op UCDVA"
-
-month <- month1 %>% select(PatientID, M1_Binoc_UCDVA_SM)
-month <- as.data.frame(table(month$M1_Binoc_UCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-mu26 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120")
-mu28 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60"| month$Var1 == "6/75"| month$Var1 == "6/95"
-               | month$Var1 == "6/120"| month$Var1 == "6/240"| month$Var1 == "CF"| month$Var1 == "HM"| month$Var1 == "POL")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu26$Group <- c('6/120 or better')
-mu26 <- mu26 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu28$Group <- c('CF or better')
-mu28 <- mu28 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('HM or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-post <- rbind(mu5, mu6, mu7, mu12, mu23, mu26, mu28, mu30)
-post$Type <- "Post-Op UCDVA"
-
-prepost_ucdva_m <- rbind(pre, post)
-prepost_ucdva_m <- subset(prepost_ucdva_m, select = -c(Freq))
-prepost_ucdva_m <- pivot_wider(prepost_ucdva_m, names_from = "Type", values_from = "percent")
-
-#### Pre BCDVA vs Post UCDVA 1 Month Bilateral Odyssey ####
-month1 <- data %>%
-  filter(SurgeryLens=="Bilateral Odyssey") %>%
-  select(PatientID, Binoc_BCDVA_SM, M1_Binoc_UCDVA_SM) %>%
-  filter(complete.cases(.)) %>%
-  unique()
-
-month <- month1 %>% select(PatientID, Binoc_BCDVA_SM)
-month <- as.data.frame(table(month$Binoc_BCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-pre <- rbind(mu5, mu6, mu7, mu12)
+pre <- rbind(mu5, mu6, mu7, mu11, mu23, mu26, mu28, mu29)
 pre$Type <- "Pre-Op BCDVA"
 
-month <- month1 %>% select(PatientID, M1_Binoc_UCDVA_SM)
-month <- as.data.frame(table(month$M1_Binoc_UCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
+month <- month1 %>%
+  select(PatientID, M1_Binoc_UCDVA_LM, SurgeryLens) %>%
+  group_by(M1_Binoc_UCDVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
 
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-
-mu5$Group <- c('6/5 or better')
+mu5 <- subset(month, month$M1_Binoc_UCDVA_LM <= -0.08)
 mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/5 or better')
 
-mu6$Group <- c('6/6 or better')
+mu6 <- subset(month, month$M1_Binoc_UCDVA_LM <= 0)
 mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/6 or better')
 
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$M1_Binoc_UCDVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu11 <- subset(month, month$M1_Binoc_UCDVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
 
-post <- rbind(mu5, mu6, mu7, mu12)
+mu23 <- subset(month, month$M1_Binoc_UCDVA_LM <= 1)
+mu23 <- mu23 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/60 or better')
+
+mu26 <- subset(month, month$M1_Binoc_UCDVA_LM <= 1.3)
+mu26 <- mu26 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/120 or better')
+
+mu28 <- subset(month, month$M1_Binoc_UCDVA_LM <= 1.8)
+mu28 <- mu28 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'CF or better')
+
+mu29 <- subset(month, month$M1_Binoc_UCDVA_LM <= 2.4)
+mu29 <- mu29 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'HM or better')
+
+post <- rbind(mu5, mu6, mu7, mu11, mu23, mu26, mu28, mu29)
 post$Type <- "Post-Op UCDVA"
 
-prebpostu_cdva_o <- rbind(pre, post)
-prebpostu_cdva_o <- subset(prebpostu_cdva_o, select = -c(Freq))
-prebpostu_cdva_o <- pivot_wider(prebpostu_cdva_o, names_from = "Type", values_from = "percent")
+prebpostu_cdva <- rbind(pre, post) %>%
+  select(-n) %>%
+  pivot_wider(names_from="Type", values_from="percent") %>%
+  select(group, `Pre-Op BCDVA`, `Post-Op UCDVA`, SurgeryLens)
 
-#### Pre BCDVA vs Post UCDVA 1 Month Bilateral PureSee ####
+
+#### Pre BCDVA vs Post BCDVA 1 Month ####
 month1 <- data %>%
-  filter(SurgeryLens=="Bilateral PureSee") %>%
-  select(PatientID, Binoc_BCDVA_SM, M1_Binoc_UCDVA_SM) %>%
+  select(PatientID, Binoc_BCDVA_LM, M1_Binoc_BCDVA_LM, SurgeryLens) %>%
   filter(complete.cases(.)) %>%
-  unique()
+  unique() %>%
+  mutate(Binoc_BCDVA_LM=as.numeric(Binoc_BCDVA_LM),
+         M1_Binoc_BCDVA_LM=as.numeric(M1_Binoc_BCDVA_LM))
 
-month <- month1 %>% select(PatientID, Binoc_BCDVA_SM)
-month <- as.data.frame(table(month$Binoc_BCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
+month <- month1 %>%
+  select(PatientID, Binoc_BCDVA_LM, SurgeryLens) %>%
+  group_by(Binoc_BCDVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
 
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-
-mu5$Group <- c('6/5 or better')
+mu5 <- subset(month, month$Binoc_BCDVA_LM <= -0.08)
 mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/5 or better')
 
-mu6$Group <- c('6/6 or better')
+mu6 <- subset(month, month$Binoc_BCDVA_LM <= 0)
 mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/6 or better')
 
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$Binoc_BCDVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu11 <- subset(month, month$Binoc_BCDVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
 
-pre <- rbind(mu5, mu6, mu7, mu12)
+mu23 <- subset(month, month$Binoc_BCDVA_LM <= 1)
+mu23 <- mu23 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/60 or better')
+
+mu26 <- subset(month, month$Binoc_BCDVA_LM <= 1.3)
+mu26 <- mu26 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/120 or better')
+
+mu28 <- subset(month, month$Binoc_BCDVA_LM <= 1.8)
+mu28 <- mu28 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'CF or better')
+
+mu29 <- subset(month, month$Binoc_BCDVA_LM <= 2.4)
+mu29 <- mu29 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'HM or better')
+
+pre <- rbind(mu5, mu6, mu7, mu11, mu23, mu26, mu28, mu29)
 pre$Type <- "Pre-Op BCDVA"
 
-month <- month1 %>% select(PatientID, M1_Binoc_UCDVA_SM)
-month <- as.data.frame(table(month$M1_Binoc_UCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
+month <- month1 %>%
+  select(PatientID, M1_Binoc_BCDVA_LM, SurgeryLens) %>%
+  group_by(M1_Binoc_BCDVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
 
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-
-mu5$Group <- c('6/5 or better')
+mu5 <- subset(month, month$M1_Binoc_BCDVA_LM <= -0.08)
 mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/5 or better')
 
-mu6$Group <- c('6/6 or better')
+mu6 <- subset(month, month$M1_Binoc_BCDVA_LM <= 0)
 mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/6 or better')
 
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$M1_Binoc_BCDVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu11 <- subset(month, month$M1_Binoc_BCDVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
 
-post <- rbind(mu5, mu6, mu7, mu12)
-post$Type <- "Post-Op UCDVA"
-
-prebpostu_cdva_p <- rbind(pre, post)
-prebpostu_cdva_p <- subset(prebpostu_cdva_p, select = -c(Freq))
-prebpostu_cdva_p <- pivot_wider(prebpostu_cdva_p, names_from = "Type", values_from = "percent")
-
-#### Pre BCDVA vs Post UCDVA 1 Month Mix and Match ####
-month1 <- data %>%
-  filter(SurgeryLens=="Mix and Match") %>%
-  select(PatientID, Binoc_BCDVA_SM, M1_Binoc_UCDVA_SM) %>%
-  filter(complete.cases(.)) %>%
-  unique()
-
-month <- month1 %>% select(PatientID, Binoc_BCDVA_SM)
-month <- as.data.frame(table(month$Binoc_BCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-pre <- rbind(mu5, mu6, mu7, mu12)
-pre$Type <- "Pre-Op BCDVA"
-
-month <- month1 %>% select(PatientID, M1_Binoc_UCDVA_SM)
-month <- as.data.frame(table(month$M1_Binoc_UCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-post <- rbind(mu5, mu6, mu7, mu12)
-post$Type <- "Post-Op UCDVA"
-
-prebpostu_cdva_m <- rbind(pre, post)
-prebpostu_cdva_m <- subset(prebpostu_cdva_m, select = -c(Freq))
-prebpostu_cdva_m <- pivot_wider(prebpostu_cdva_m, names_from = "Type", values_from = "percent")
-
-#### Pre BCDVA vs Post BCDVA 1 Month Bilateral Odyssey ####
-
-y <- data %>%
-  filter(SurgeryLens=="Bilateral Odyssey") %>%
-  select(PatientID, EyeID, Binoc_BCDVA_SM, Binoc_BCDVA_D, M1_Binoc_BCDVA_SM, M1_Binoc_BCDVA_D, M1_Binoc_UCDVA_D) %>%
-  filter(complete.cases(.)) %>%
-  unique()
-
-premean <- as.data.frame(mean(y$Binoc_BCDVA_D))
-presd <- as.data.frame(sd(y$Binoc_BCDVA_D))
-prebcdva <- do.call("cbind", c(premean,presd))
-colnames(prebcdva) <- c("Mean", "SD")
-
-postmean <- as.data.frame(mean(y$M1_Binoc_BCDVA_D))
-postsd <- as.data.frame(sd(y$M1_Binoc_BCDVA_D))
-postbcdva <- do.call("cbind", c(postmean,postsd))
-colnames(postbcdva) <- c("Mean", "SD")
-
-y$safety <- y$M1_Binoc_BCDVA_D/y$Binoc_BCDVA_D
-smean <- as.data.frame(mean(y$safety))
-ssd <- as.data.frame(sd(y$safety))
-bcdva_safety <- do.call("cbind", c(smean,ssd))
-colnames(bcdva_safety) <- c("Mean", "SD")
-
-y$efficacy <- y$M1_Binoc_UCDVA_D/y$Binoc_BCDVA_D
-emean <- as.data.frame(mean(y$efficacy))
-esd <- as.data.frame(sd(y$efficacy))
-bcdva_efficacy <- do.call("cbind", c(emean,esd))
-colnames(bcdva_efficacy) <- c("Mean", "SD")
-
-bilatlist <- list("Pre BCDVA O" = prebcdva,
-                  "Post BCDVA O" = postbcdva,
-                  "Safety O" = bcdva_safety,
-                  "Efficacy O" = bcdva_efficacy)
-
-month <- y
-month <- as.data.frame(table(month$Binoc_BCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
+mu23 <- subset(month, month$M1_Binoc_BCDVA_LM <= 1)
 mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-pre <-  rbind(mu5, mu6, mu7, mu12, mu20, mu30, mu23)
-pre$Tag <- "Pre-Op BCDVA"
-pre <- subset(pre, select = -c(Freq))
-
-month <- y
-month <- as.data.frame(table(month$M1_Binoc_BCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-post <- rbind(mu5, mu6, mu7, mu12, mu20, mu30, mu23)
-post$Tag <- "Post-Op BCDVA"
-post <- subset(post, select = -c(Freq))
-
-prepost_bcdva_o <- union(pre, post)
-prepost_bcdva_o <- prepost_bcdva_o %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
-
-
-#### Pre BCDVA vs Post BCDVA 1 Month Bilateral PureSee ####
-
-y <- data %>%
-  filter(SurgeryLens=="Bilateral PureSee") %>%
-  select(PatientID, EyeID, Binoc_BCDVA_SM, Binoc_BCDVA_D, M1_Binoc_BCDVA_SM, M1_Binoc_BCDVA_D, M1_Binoc_UCDVA_D) %>%
-  filter(complete.cases(.)) %>%
-  unique()
-
-premean <- as.data.frame(mean(y$Binoc_BCDVA_D))
-presd <- as.data.frame(sd(y$Binoc_BCDVA_D))
-prebcdva <- do.call("cbind", c(premean,presd))
-colnames(prebcdva) <- c("Mean", "SD")
-
-postmean <- as.data.frame(mean(y$M1_Binoc_BCDVA_D))
-postsd <- as.data.frame(sd(y$M1_Binoc_BCDVA_D))
-postbcdva <- do.call("cbind", c(postmean,postsd))
-colnames(postbcdva) <- c("Mean", "SD")
-
-y$safety <- y$M1_Binoc_BCDVA_D/y$Binoc_BCDVA_D
-smean <- as.data.frame(mean(y$safety))
-ssd <- as.data.frame(sd(y$safety))
-bcdva_safety <- do.call("cbind", c(smean,ssd))
-colnames(bcdva_safety) <- c("Mean", "SD")
-
-y$efficacy <- y$M1_Binoc_UCDVA_D/y$Binoc_BCDVA_D
-emean <- as.data.frame(mean(y$efficacy))
-esd <- as.data.frame(sd(y$efficacy))
-bcdva_efficacy <- do.call("cbind", c(emean,esd))
-colnames(bcdva_efficacy) <- c("Mean", "SD")
-
-bilatplist <- list("Pre BCDVA P" = prebcdva,
-                  "Post BCDVA P" = postbcdva,
-                  "Safety P" = bcdva_safety,
-                  "Efficacy P" = bcdva_efficacy)
-
-month <- y
-month <- as.data.frame(table(month$Binoc_BCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-pre <-  rbind(mu5, mu6, mu7, mu12, mu20, mu30, mu23)
-pre$Tag <- "Pre-Op BCDVA"
-pre <- subset(pre, select = -c(Freq))
-
-month <- y
-month <- as.data.frame(table(month$M1_Binoc_BCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-post <- rbind(mu5, mu6, mu7, mu12, mu20, mu30, mu23)
-post$Tag <- "Post-Op BCDVA"
-post <- subset(post, select = -c(Freq))
-
-prepost_bcdva_p <- union(pre, post)
-prepost_bcdva_p <- prepost_bcdva_p %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
-
-#### Pre BCDVA vs Post BCDVA 1 Month Mix and Match ####
-
-y <- data %>%
-  filter(SurgeryLens=="Mix and Match") %>%
-  select(PatientID, EyeID, Binoc_BCDVA_SM, Binoc_BCDVA_D, M1_Binoc_BCDVA_SM, M1_Binoc_BCDVA_D, M1_Binoc_UCDVA_D) %>%
-  filter(complete.cases(.)) %>%
-  unique()
-
-premean <- as.data.frame(mean(y$Binoc_BCDVA_D))
-presd <- as.data.frame(sd(y$Binoc_BCDVA_D))
-prebcdva <- do.call("cbind", c(premean,presd))
-colnames(prebcdva) <- c("Mean", "SD")
-
-postmean <- as.data.frame(mean(y$M1_Binoc_BCDVA_D))
-postsd <- as.data.frame(sd(y$M1_Binoc_BCDVA_D))
-postbcdva <- do.call("cbind", c(postmean,postsd))
-colnames(postbcdva) <- c("Mean", "SD")
-
-y$safety <- y$M1_Binoc_BCDVA_D/y$Binoc_BCDVA_D
-smean <- as.data.frame(mean(y$safety))
-ssd <- as.data.frame(sd(y$safety))
-bcdva_safety <- do.call("cbind", c(smean,ssd))
-colnames(bcdva_safety) <- c("Mean", "SD")
-
-y$efficacy <- y$M1_Binoc_UCDVA_D/y$Binoc_BCDVA_D
-emean <- as.data.frame(mean(y$efficacy))
-esd <- as.data.frame(sd(y$efficacy))
-bcdva_efficacy <- do.call("cbind", c(emean,esd))
-colnames(bcdva_efficacy) <- c("Mean", "SD")
-
-mixlist <- list("Pre BCDVA M" = prebcdva,
-                "Post BCDVA M" = postbcdva,
-                "Safety M" = bcdva_safety,
-                "Efficacy M" = bcdva_efficacy)
-list <- c(bilatlist, bilatplist, mixlist)
-write.xlsx(list, paste(path, "/tables/", "safetynefficacy.xlsx", sep = ""))
-
-month <- y
-month <- as.data.frame(table(month$Binoc_BCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-pre <-  rbind(mu5, mu6, mu7, mu12, mu20, mu30, mu23)
-pre$Tag <- "Pre-Op BCDVA"
-pre <- subset(pre, select = -c(Freq))
-
-month <- y
-month <- as.data.frame(table(month$M1_Binoc_BCDVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-mu5$Group <- c('6/5 or better')
-mu5 <- mu5 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-post <- rbind(mu5, mu6, mu7, mu12, mu20, mu30, mu23)
-post$Tag <- "Post-Op BCDVA"
-post <- subset(post, select = -c(Freq))
-
-prepost_bcdva_m <- union(pre, post)
-prepost_bcdva_m <- prepost_bcdva_m %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/60 or better')
+
+mu26 <- subset(month, month$M1_Binoc_BCDVA_LM <= 1.3)
+mu26 <- mu26 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/120 or better')
+
+mu28 <- subset(month, month$M1_Binoc_BCDVA_LM <= 1.8)
+mu28 <- mu28 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'CF or better')
+
+mu29 <- subset(month, month$M1_Binoc_BCDVA_LM <= 2.4)
+mu29 <- mu29 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'HM or better')
+
+post <- rbind(mu5, mu6, mu7, mu11, mu23, mu26, mu28, mu29)
+post$Type <- "Post-Op BCDVA"
+
+prepost_bcdva <- rbind(pre, post) %>%
+  select(-n) %>%
+  pivot_wider(names_from="Type", values_from="percent") %>%
+  select(group, `Pre-Op BCDVA`, `Post-Op BCDVA`, SurgeryLens)
 
 #### 1 Month Change in UCDVA ####
 y <- data %>%
-  select(PatientID, EyeID, UCDVA_LogMAR, M1_UCDVA_LM, SurgeryLens)
+  select(PatientID, EyeID, UCDVA_LM, M1_Binoc_UCDVA_LM, SurgeryLens)
 y <- y[complete.cases(y),]
-y$UCDVA_LogMAR <- as.numeric(y$UCDVA_LogMAR)
-y$M1_UCDVA_LM <- as.numeric(y$M1_UCDVA_LM)
-y$UCDVA_LogMAR[is.na(y$UCDVA_LogMAR)] <- 1.8
-y$M1_UCDVA_LM[is.na(y$M1_UCDVA_LM)] <- 1.8
+y$UCDVA_LM <- as.numeric(y$UCDVA_LM)
+y$M1_Binoc_UCDVA_LM <- as.numeric(y$M1_Binoc_UCDVA_LM)
+y$UCDVA_LM[is.na(y$UCDVA_LM)] <- 1.8
+y$M1_Binoc_UCDVA_LM[is.na(y$M1_Binoc_UCDVA_LM)] <- 1.8
 
-y$m1_ucdlc <- 10*(y$UCDVA_LogMAR - y$M1_UCDVA_LM)
+y$m1_ucdlc <- 10*(y$UCDVA_LM - y$M1_Binoc_UCDVA_LM)
 y$m1_ucdlc <- round(y$m1_ucdlc)
 
-y$LogMarChange <- y$UCDVA_LogMAR - y$M1_UCDVA_LM
-ymeano<-round(mean(y$LogMarChange[y$SurgeryLens=="Bilateral Odyssey"]), digits = 2)
-ymeanp<-round(mean(y$LogMarChange[y$SurgeryLens=="Bilateral PureSee"]), digits = 2)
-ymeanm<-round(mean(y$LogMarChange[y$SurgeryLens=="Mix and Match"]), digits = 2)
+y$LMChange <- y$UCDVA_LM - y$M1_Binoc_UCDVA_LM
+ymeano<-round(mean(y$LMChange[y$SurgeryLens=="Bilateral Odyssey"]), digits = 2)
+ymeanp<-round(mean(y$LMChange[y$SurgeryLens=="Bilateral PureSee"]), digits = 2)
+ymeanm<-round(mean(y$LMChange[y$SurgeryLens=="Mix and Match"]), digits = 2)
 meanchange <- data.frame(cbind(c("Bilateral Odyssey"),c(ymeano))) %>% rename("UCDVA"="X2")
 meanchange <- rbind(meanchange, data.frame(cbind(c("Bilateral PureSee"),c(ymeanp))) %>% rename("UCDVA"="X2"))
 meanchange <- rbind(meanchange, data.frame(cbind(c("Mix and Match"),c(ymeanm))) %>% rename("UCDVA"="X2"))
@@ -1933,180 +1143,58 @@ y$MixPercent <- round(y$`Mix and Match`/sum(y$`Mix and Match`), digits = 4)
 ucdva_lc <- y %>% select(-`Bilateral Odyssey`,-`Bilateral PureSee`, -`Mix and Match`)
 
 #### 1 Month Binocular UCIVA ####
-
 month1 <- data %>%
-  filter(SurgeryLens=="Bilateral Odyssey") %>%
-  select(PatientID, M1_Binoc_UCIVA_SM) %>%
+  select(PatientID, M1_Binoc_UCIVA_LM, SurgeryLens) %>%
   filter(complete.cases(.)) %>%
   unique()
 
-month <- as.data.frame(table(month1$M1_Binoc_UCIVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
+month <- month1 %>%
+  select(PatientID, M1_Binoc_UCIVA_LM, SurgeryLens) %>%
+  group_by(M1_Binoc_UCIVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
 
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-# mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              # | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-# mu6$Group <- c('6/6 or better')
-# mu6 <- mu6 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$M1_Binoc_UCIVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu11 <- subset(month, month$M1_Binoc_UCIVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
 
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+mu18 <- subset(month, month$M1_Binoc_UCIVA_LM <= 0.7)
+mu18 <- mu18 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/30 or better')
 
-od <- rbind(mu7, mu12, mu30)
-od$Type <- "Odyssey"
-
-month1 <- data %>%
-  filter(SurgeryLens=="Bilateral PureSee") %>%
-  select(PatientID, M1_Binoc_UCIVA_SM)
-
-month1 <- month1[complete.cases(month1),]
-month <- as.data.frame(table(month1$M1_Binoc_UCIVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-# mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-# | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-# mu6$Group <- c('6/6 or better')
-# mu6 <- mu6 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-ps <- rbind(mu7, mu12, mu30)
-ps$Type <- "PureSee"
-
-month1 <- data %>%
-  filter(SurgeryLens=="Mix and Match") %>%
-  select(PatientID, M1_Binoc_UCIVA_SM)
-
-month1 <- month1[complete.cases(month1),]
-month <- as.data.frame(table(month1$M1_Binoc_UCIVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-# mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              # | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-# mu6$Group <- c('6/6 or better')
-# mu6 <- mu6 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mix <- rbind(mu7, mu12, mu30)
-mix$Type <- "Mix and Match"
-
-binoc_uciva <- union(od, ps)
-binoc_uciva <- union(binoc_uciva, mix)
-binoc_uciva <- subset(binoc_uciva, select = -c(Freq))
-binoc_uciva <- pivot_wider(binoc_uciva, names_from = "Type", values_from = "percent")
+binoc_uciva <- rbind(mu7, mu11, mu18) %>%
+  select(-n) %>%
+  pivot_wider(names_from = "SurgeryLens", values_from = "percent")
 
 #### 1 Month Change in UCIVA ####
 
 y <- data %>%
-  select(PatientID, EyeID, UCIVA_LogMAR, M1_UCIVA_LM, SurgeryLens)
+  select(PatientID, EyeID, UCIVA_LM, M1_UCIVA_LM, SurgeryLens)
 y <- y[complete.cases(y),]
-y$UCIVA_LogMAR <- as.numeric(y$UCIVA_LogMAR)
+y$UCIVA_LM <- as.numeric(y$UCIVA_LM)
 y$M1_UCIVA_LM <- as.numeric(y$M1_UCIVA_LM)
-y$UCIVA_LogMAR[is.na(y$UCIVA_LogMAR)] <- 1.8
+y$UCIVA_LM[is.na(y$UCIVA_LM)] <- 1.8
 y$M1_UCIVA_LM[is.na(y$M1_UCIVA_LM)] <- 1.8
 
-y$m1_ucdlc <- 10*(y$UCIVA_LogMAR - y$M1_UCIVA_LM)
+y$m1_ucdlc <- 10*(y$UCIVA_LM - y$M1_UCIVA_LM)
 y$m1_ucdlc <- round(y$m1_ucdlc)
 
-y$LogMarChange <- y$UCIVA_LogMAR - y$M1_UCIVA_LM
-ymeano <- cbind("Bilateral Odyssey", round(mean(y$LogMarChange[y$SurgeryLens=="Bilateral Odyssey"]), digits = 2))
-ymeanp <- cbind("Bilateral PureSee", round(mean(y$LogMarChange[y$SurgeryLens=="Bilateral PureSee"]), digits = 2))
-ymeanm <- cbind("Mix and Match", round(mean(y$LogMarChange[y$SurgeryLens=="Mix and Match"]), digits = 2))
+y$LMChange <- y$UCIVA_LM - y$M1_UCIVA_LM
+ymeano <- cbind("Bilateral Odyssey", round(mean(y$LMChange[y$SurgeryLens=="Bilateral Odyssey"]), digits = 2))
+ymeanp <- cbind("Bilateral PureSee", round(mean(y$LMChange[y$SurgeryLens=="Bilateral PureSee"]), digits = 2))
+ymeanm <- cbind("Mix and Match", round(mean(y$LMChange[y$SurgeryLens=="Mix and Match"]), digits = 2))
 ymean <- rbind(ymeano, ymeanp, ymeanm)
 meanchange <- merge(meanchange, data.frame(ymean), by="X1") %>% rename("UCIVA"="X2")
 
@@ -2139,1017 +1227,242 @@ y$MixPercent <- round(y$`Mix and Match`/sum(y$`Mix and Match`), digits = 4)
 uciva_lc <- y %>% select(-`Bilateral Odyssey`, -`Bilateral PureSee`, - `Mix and Match`)
 
 #### 1 Month Binocular UCNVA ####
-month1 <- data %>% select(PatientID, M1_Binoc_UCNVA_SM, SurgeryLens) %>%
+month1 <- data %>%
+  select(PatientID, M1_Binoc_UCNVA_LM, SurgeryLens) %>%
   filter(complete.cases(.)) %>%
   unique()
 
-month <- as.data.frame(table(month1$M1_Binoc_UCNVA_SM[which(month1$SurgeryLens=="Bilateral Odyssey")]))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
+month <- month1 %>%
+  select(PatientID, M1_Binoc_UCNVA_LM, SurgeryLens) %>%
+  group_by(M1_Binoc_UCNVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
 
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu19 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/24"| month$Var1 == "6/30")
-
-mu6$Group <- c('6/6 or better')
+mu6 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0)
 mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/6 or better')
 
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
+mu11 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
+
+mu12 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.4)
 mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu19$Group <- c('6/19 or better')
-mu19 <- mu19 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-od <- rbind(mu6, mu7, mu12, mu15, mu19, mu30)
-od$Type <- "Bilateral Odyssey"
-
-month <- as.data.frame(table(month1$M1_Binoc_UCNVA_SM[which(month1$SurgeryLens=="Bilateral PureSee")]))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu19 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/24"| month$Var1 == "6/30")
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu19$Group <- c('6/19 or better')
-mu19 <- mu19 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-ps <- rbind(mu6, mu7, mu12, mu15, mu19, mu30)
-ps$Type <- "Bilateral PureSee"
-
-month <- as.data.frame(table(month1$M1_Binoc_UCNVA_SM[which(month1$SurgeryLens=="Mix and Match")]))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-month$Group <- c('')
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-# mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-#               | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu19 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu6$Group <- c('6/6 or better')
-# mu6 <- mu6 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu19$Group <- c('6/19 or better')
-mu19 <- mu19 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mix <- rbind(mu7, mu12, mu15, mu19, mu30)
-mix$Type <- "Mix and Match"
-
-binoc_ucnva <- rbind(od,ps)
-binoc_ucnva <- rbind(binoc_ucnva,mix)
-binoc_ucnva <- subset(binoc_ucnva, select = -c(Freq))
-binoc_ucnva <- pivot_wider(binoc_ucnva, names_from = "Type", values_from = "percent")
-
-#### 1 Month Monocular and Binocular UCNVA Bilateral Odyssey ####
-month1 <- data %>%
-  filter(SurgeryLens=="Bilateral Odyssey") %>%
-  select(PatientID, EyeID, M1_UCNVA_SM, M1_Binoc_UCNVA_SM)
-month1 <- month1[complete.cases(month1),]
-
-month <- month1 %>% select(PatientID,EyeID, M1_UCNVA_SM)
-month <- as.data.frame(table(month$M1_UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-monoc <-  rbind(mu6, mu7, mu12, mu15, mu20, mu30)
-monoc$Tag <- "Monocular"
-monoc <- subset(monoc, select = -c(Freq))
-
-month <- month1 %>% select(PatientID,M1_Binoc_UCNVA_SM) %>% unique()
-month <- as.data.frame(table(month$M1_Binoc_UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-binoc <-  rbind(mu6, mu7, mu12, mu15, mu20, mu30)
-binoc$Tag <- "Binocular"
-binoc <- subset(binoc, select = -c(Freq))
-
-ucnva_o <- rbind(monoc,binoc)
-ucnva_o <- ucnva_o %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
-
-
-#### 1 Month Monocular and Binocular UCNVA Bilateral PureSee ####
-month1 <- data %>%
-  filter(SurgeryLens=="Bilateral PureSee") %>%
-  select(PatientID, EyeID, M1_UCNVA_SM, M1_Binoc_UCNVA_SM)
-month1 <- month1[complete.cases(month1),]
-
-month <- month1 %>% select(PatientID,EyeID, M1_UCNVA_SM)
-month <- as.data.frame(table(month$M1_UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-monoc <-  rbind(mu6, mu7, mu12, mu15, mu20, mu30)
-monoc$Tag <- "Monocular"
-monoc <- subset(monoc, select = -c(Freq))
-
-month <- month1 %>% select(PatientID,M1_Binoc_UCNVA_SM) %>% unique()
-month <- as.data.frame(table(month$M1_Binoc_UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-binoc <-  rbind(mu6, mu7, mu12, mu15, mu20, mu30)
-binoc$Tag <- "Binocular"
-binoc <- subset(binoc, select = -c(Freq))
-
-ucnva_p <- rbind(monoc,binoc)
-ucnva_p <- ucnva_p %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
-
-#### 1 Month Monocular and Binocular UCNVA Mix and Match ####
-month1 <- data %>%
-  filter(SurgeryLens=="Mix and Match") %>%
-  select(PatientID, EyeID, M1_UCNVA_SM, M1_Binoc_UCNVA_SM)
-month1 <- month1[complete.cases(month1),]
-
-month <- month1 %>% select(PatientID,EyeID, M1_UCNVA_SM)
-month <- as.data.frame(table(month$M1_UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-# mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-#               | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-# mu6$Group <- c('6/6 or better')
-# mu6 <- mu6 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-monoc <-  rbind(mu7, mu12, mu15, mu20, mu30)
-monoc$Tag <- "Monocular"
-monoc <- subset(monoc, select = -c(Freq))
-
-month <- month1 %>% select(PatientID,M1_Binoc_UCNVA_SM) %>% unique()
-month <- as.data.frame(table(month$M1_Binoc_UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-# mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-#               | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu20 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20")
-mu30 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/24"| month$Var1 == "6/30")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-# mu6$Group <- c('6/6 or better')
-# mu6 <- mu6 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu20$Group <- c('6/20 or better')
-mu20 <- mu20 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu30$Group <- c('6/30 or better')
-mu30 <- mu30 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-binoc <-  rbind(mu7, mu12, mu15, mu20, mu30)
-binoc$Tag <- "Binocular"
-binoc <- subset(binoc, select = -c(Freq))
-
-ucnva_m <- rbind(monoc,binoc)
-ucnva_m <- ucnva_m %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
-
-#### 1 Month Monocular UCNVA Bilateral Odyssey ####
-month1 <- data %>%
-  filter(SurgeryLens=="Bilateral Odyssey") %>%
-  select(PatientID, EyeID, UCNVA_SM, M1_UCNVA_SM, SurgeryLens)
-month1 <- month1[complete.cases(month1),]
-
-month <- month1 %>% select(PatientID,UCNVA_SM)
-month <- as.data.frame(table(month$UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-# mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-#               | month$Var1 == "6/6")
-# mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-#               | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu18 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-# mu6$Group <- c('6/6 or better')
-# mu6 <- mu6 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-# mu7$Group <- c('6/7.5 or better')
-# mu7 <- mu7 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu18$Group <- c('6/30 or better')
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/15 or better')
+
+mu14 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.5)
+mu14 <- mu14 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/19 or better')
+
+mu18 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.7)
 mu18 <- mu18 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/30 or better')
 
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+binoc_ucnva <- rbind(mu6, mu7, mu11, mu12, mu14, mu18) %>%
+  select(-n) %>%
+  pivot_wider(names_from = "SurgeryLens", values_from = "percent")
 
-mono <-  rbind(mu12, mu15, mu18, mu23)
-mono$Tag <- "Pre Op"
-mono <- subset(mono, select = -c(Freq))
-
-month <- month1 %>% select(PatientID,EyeID, M1_UCNVA_SM)
-month <- as.data.frame(table(month$M1_UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu18 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
-mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu18$Group <- c('6/30 or better')
-mu18 <- mu18 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-bi <-  rbind(mu6, mu7, mu12, mu15, mu18, mu23)
-bi$Tag <- "3 Month Post Op"
-bi <- subset(bi, select = -c(Freq))
-
-monoc_ucnva_o <- union(mono, bi)
-monoc_ucnva_o <- monoc_ucnva_o %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
-
-
-#### 1 Month Monocular UCNVA Bilateral PureSee ####
+#### 1 Month Monocular and Binocular UCNVA ####
 month1 <- data %>%
-  filter(SurgeryLens=="Bilateral PureSee") %>%
-  select(PatientID, EyeID, UCNVA_SM, M1_UCNVA_SM, SurgeryLens)
-month1 <- month1[complete.cases(month1),]
+  select(PatientID, M1_UCNVA_LM, M1_Binoc_UCNVA_LM, SurgeryLens) %>%
+  filter(complete.cases(.)) %>%
+  unique() %>%
+  mutate(M1_UCNVA_LM=as.numeric(M1_UCNVA_LM),
+         M1_Binoc_UCNVA_LM=as.numeric(M1_Binoc_UCNVA_LM))
 
-month <- month1 %>% select(PatientID,EyeID, UCNVA_SM)
-month <- as.data.frame(table(month$UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
+month <- month1 %>%
+  select(PatientID, M1_UCNVA_LM, SurgeryLens) %>%
+  group_by(M1_UCNVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
 
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu18 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
+mu5 <- subset(month, month$M1_UCNVA_LM <= -0.08)
+mu5 <- mu5 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/5 or better')
 
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu6$Group <- c('6/6 or better')
+mu6 <- subset(month, month$M1_UCNVA_LM <= 0)
 mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/6 or better')
 
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$M1_UCNVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
+mu11 <- subset(month, month$M1_UCNVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
+
+mu12 <- subset(month, month$M1_UCNVA_LM <= 0.4)
 mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/15 or better')
 
-mu15$Group <- c('6/15 or better')
+mu15 <- subset(month, month$M1_UCNVA_LM <= 0.52)
 mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/20 or better')
 
-mu18$Group <- c('6/30 or better')
+mu18 <- subset(month, month$M1_UCNVA_LM <= 0.7)
 mu18 <- mu18 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/30 or better')
 
-mu23$Group <- c('6/60 or better')
+mu23 <- subset(month, month$M1_UCNVA_LM <= 1)
 mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/60 or better')
 
-mono <-  rbind(mu6, mu7, mu12, mu15, mu18, mu23)
-mono$Tag <- "Pre Op"
-mono <- subset(mono, select = -c(Freq))
+mu26 <- subset(month, month$M1_UCNVA_LM <= 1.3)
+mu26 <- mu26 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/120 or better')
 
-month <- month1 %>% select(PatientID,EyeID, M1_UCNVA_SM)
-month <- as.data.frame(table(month$M1_UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
+mu28 <- subset(month, month$M1_UCNVA_LM <= 1.8)
+mu28 <- mu28 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'CF or better')
 
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu18 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
+mu29 <- subset(month, month$M1_UCNVA_LM <= 2.4)
+mu29 <- mu29 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'HM or better')
 
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
+pre <- rbind(mu5, mu6, mu7, mu11, mu12, mu15, mu18, mu23, mu26, mu28, mu29)
+pre$Type <- "Monocular UCNVA"
 
-mu6$Group <- c('6/6 or better')
+month <- month1 %>%
+  select(PatientID, M1_Binoc_UCNVA_LM, SurgeryLens) %>%
+  group_by(M1_Binoc_UCNVA_LM, SurgeryLens) %>%
+  count() %>%
+  group_by(SurgeryLens) %>%
+  mutate(percent = n/sum(n),
+         group = c(''))
+
+mu5 <- subset(month, month$M1_Binoc_UCNVA_LM <= -0.08)
+mu5 <- mu5 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/5 or better')
+
+mu6 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0)
 mu6 <- mu6 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/6 or better')
 
-mu7$Group <- c('6/7.5 or better')
+mu7 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.1)
 mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/7.5 or better')
 
-mu12$Group <- c('6/12 or better')
+mu11 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.3)
+mu11 <- mu11 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/12 or better')
+
+mu12 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.4)
 mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/15 or better')
 
-mu15$Group <- c('6/15 or better')
+mu15 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.52)
 mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/20 or better')
 
-mu18$Group <- c('6/30 or better')
+mu18 <- subset(month, month$M1_Binoc_UCNVA_LM <= 0.7)
 mu18 <- mu18 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/30 or better')
 
-mu23$Group <- c('6/60 or better')
+mu23 <- subset(month, month$M1_Binoc_UCNVA_LM <= 1)
 mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/60 or better')
 
-bi <-  rbind(mu6, mu7, mu12, mu15, mu18, mu23)
-bi$Tag <- "3 Month Post Op"
-bi <- subset(bi, select = -c(Freq))
+mu26 <- subset(month, month$M1_Binoc_UCNVA_LM <= 1.3)
+mu26 <- mu26 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = '6/120 or better')
 
-monoc_ucnva_p <- union(mono, bi)
-monoc_ucnva_p <- monoc_ucnva_p %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
+mu28 <- subset(month, month$M1_Binoc_UCNVA_LM <= 1.8)
+mu28 <- mu28 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'CF or better')
 
-#### 1 Month Monocular UCNVA Mix and Match ####
-month1 <- data %>%
-  filter(SurgeryLens=="Mix and Match") %>%
-  select(PatientID, EyeID, UCNVA_SM, M1_UCNVA_SM, SurgeryLens)
-month1 <- month1[complete.cases(month1),]
+mu29 <- subset(month, month$M1_Binoc_UCNVA_LM <= 2.4)
+mu29 <- mu29 %>%
+  group_by(SurgeryLens) %>%
+  summarise_at(c('n', 'percent'), sum) %>%
+  mutate(group = 'HM or better')
 
-month <- month1 %>% select(PatientID,UCNVA_SM)
-month <- as.data.frame(table(month$UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
+post <- rbind(mu5, mu6, mu7, mu11, mu12, mu15, mu18, mu23, mu26, mu28, mu29)
+post$Type <- "Binocular UCNVA"
 
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-# mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-#               | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu18 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-# 
-# mu6$Group <- c('6/6 or better')
-# mu6 <- mu6 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu18$Group <- c('6/30 or better')
-mu18 <- mu18 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mono <-  rbind(mu7, mu12, mu15, mu18, mu23)
-mono$Tag <- "Pre Op"
-mono <- subset(mono, select = -c(Freq))
-
-month <- month1 %>% select(PatientID,EyeID, M1_UCNVA_SM)
-month <- as.data.frame(table(month$M1_UCNVA_SM))
-month$percent <- round(month$Freq/sum(month$Freq), digits = 4)
-
-# mu5 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5")
-# mu6 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-#               | month$Var1 == "6/6")
-mu7 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-              | month$Var1 == "6/6" | month$Var1 == "6/7.5")
-mu12 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12")
-mu15 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12" | month$Var1 == "6/15")
-mu18 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30")
-mu23 <- subset(month, month$Var1 == "6/3" | month$Var1 == "6/3.8" | month$Var1 == "6/4" | month$Var1 == "6/4.8" | month$Var1 == "6/5"
-               | month$Var1 == "6/6" | month$Var1 == "6/7.5" | month$Var1 == "6/9" | month$Var1 == "6/9.5" | month$Var1 == "6/10"
-               | month$Var1 == "6/12"| month$Var1 == "6/15"| month$Var1 == "6/18"| month$Var1 == "6/19"| month$Var1 == "6/20"
-               | month$Var1 == "6/21"| month$Var1 == "6/24"| month$Var1 == "6/30" | month$Var1 == "6/34.2"| month$Var1 == "6/36"
-               | month$Var1 == "6/38"| month$Var1 == "6/48"| month$Var1 == "6/60")
-
-# mu5$Group <- c('6/5 or better')
-# mu5 <- mu5 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-# 
-# mu6$Group <- c('6/6 or better')
-# mu6 <- mu6 %>%
-#   group_by(Group) %>%
-#   summarise_at(c('Freq', 'percent'), sum)
-
-mu7$Group <- c('6/7.5 or better')
-mu7 <- mu7 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu12$Group <- c('6/12 or better')
-mu12 <- mu12 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu15$Group <- c('6/15 or better')
-mu15 <- mu15 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu18$Group <- c('6/30 or better')
-mu18 <- mu18 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-mu23$Group <- c('6/60 or better')
-mu23 <- mu23 %>%
-  group_by(Group) %>%
-  summarise_at(c('Freq', 'percent'), sum)
-
-bi <-  rbind(mu7, mu12, mu15, mu18, mu23)
-bi$Tag <- "3 Month Post Op"
-bi <- subset(bi, select = -c(Freq))
-
-monoc_ucnva_m <- union(mono, bi)
-monoc_ucnva_m <- monoc_ucnva_m %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
+ucnva_mb <- rbind(pre, post) %>%
+  select(-n) %>%
+  pivot_wider(names_from="Type", values_from="percent") %>%
+  select(group, `Monocular UCNVA`, `Binocular UCNVA`, SurgeryLens)
 
 #### 1 Month Change in UCNVA ####
 y <- data %>%
-  select(PatientID, EyeID, UCNVA_LogMAR, M1_UCNVA_LM, SurgeryLens)
+  select(PatientID, EyeID, UCNVA_LM, M1_UCNVA_LM, SurgeryLens)
 y <- y[complete.cases(y),]
-y$UCNVA_LogMAR <- as.numeric(y$UCNVA_LogMAR)
+y$UCNVA_LM <- as.numeric(y$UCNVA_LM)
 y$M1_UCNVA_LM <- as.numeric(y$M1_UCNVA_LM)
-y$UCNVA_LogMAR[is.na(y$UCNVA_LogMAR)] <- 1.8
+y$UCNVA_LM[is.na(y$UCNVA_LM)] <- 1.8
 y$M1_UCNVA_LM[is.na(y$M1_UCNVA_LM)] <- 1.8
 
-y$m1_ucdlc <- 10*(y$UCNVA_LogMAR - y$M1_UCNVA_LM)
+y$m1_ucdlc <- 10*(y$UCNVA_LM - y$M1_UCNVA_LM)
 y$m1_ucdlc <- round(y$m1_ucdlc)
 
-y$LogMarChange <- y$UCNVA_LogMAR - y$M1_UCNVA_LM
-ymeano <- cbind("Bilateral Odyssey", round(mean(y$LogMarChange[y$SurgeryLens=="Bilateral Odyssey"]), digits = 2))
-ymeanp <- cbind("Bilateral PureSee", round(mean(y$LogMarChange[y$SurgeryLens=="Bilateral PureSee"]), digits = 2))
-ymeanm <- cbind("Mix and Match", round(mean(y$LogMarChange[y$SurgeryLens=="Mix and Match"]), digits = 2))
+y$LMChange <- y$UCNVA_LM - y$M1_UCNVA_LM
+ymeano <- cbind("Bilateral Odyssey", round(mean(y$LMChange[y$SurgeryLens=="Bilateral Odyssey"]), digits = 2))
+ymeanp <- cbind("Bilateral PureSee", round(mean(y$LMChange[y$SurgeryLens=="Bilateral PureSee"]), digits = 2))
+ymeanm <- cbind("Mix and Match", round(mean(y$LMChange[y$SurgeryLens=="Mix and Match"]), digits = 2))
 ymean <- rbind(ymeano, ymeanp, ymeanm)
 meanchange <- merge(meanchange, data.frame(ymean), by="X1") %>% rename("UCNVA"="X2")
 
@@ -3284,7 +1597,7 @@ bcdvam1 <- y %>%
   filter(m1_gain_bcdlc == "Loss 2 or more") %>%
   select(PatientID, EyeID, Age, Sphere, Cyl, m1_gain_bcdlc, Sph_M1, M1_BCDVA_LM, SurgeryLens)
 
-bcdva_loss_px1 <- unique(bcdvam1[c(1,2)])
+bcdva_loss_px1 <- bcdvam1 %>% distinct(PatientID, EyeID, SurgeryLens)
   
 p <- bcdvam1 %>%
   select(PatientID, SurgeryLens) %>%
@@ -3394,8 +1707,6 @@ enh12 <- data %>%
   select(Surgery, Tag, Percent)
 
 enh1 <- rbind(enh6 ,enh12)
-
-
 
 enh <- data %>% select(PatientID, EyeID, SurgeryLens, SurgeryDateTime, Surgery, EnhDate, Enh_SurgeryGroup, Enh_Surgery)
 
@@ -3556,9 +1867,9 @@ COMP <- comp1
 COMP <- merge(COMP,data %>% select(PatientID, EyeID, SurgeryLens, SurgeryDateTime), by=c("PatientID","EyeID"),all.x=TRUE)
 
 # Complications cleaning
-remove <- read_excel("S:\\Clinical Services\\Research Assistants\\Surgeon Outcomes - NEW\\Complication List - Surgeon Outcomes Packs - 17022026 v3.xlsx",
+remove <- read_excel("S:\\Clinical Services\\Research Assistants\\Useful Code Snippets\\Helpsheet\\Complication List - Surgeon Outcomes Packs.xlsx",
                      sheet="IOL")
-remove <- remove %>% filter(`Include In Outcomes` == "Yes") %>% select(-Combine, -`Include In Outcomes`) %>% unique() %>%
+remove <- remove %>% filter(`Include In Outcomes` == "Yes") %>% select(-`Include In Outcomes`) %>% unique() %>%
   mutate(`Timeline 1` = case_when(`Timeline 1`== "Surgery" ~ 0,
                                   `Timeline 1`== "20 Days PO" ~ 20,
                                   .default=NA),
@@ -3573,7 +1884,7 @@ COMP <- COMP %>%
   select(PatientID, EyeID, SurgeryLens, Complication, PostOp) %>%
   unique()
 
-#### PCO's ####
+##### PCO's ####
 PCO <- subset(COMP, COMP$Complication=='Posterior Capsular Opacification (PCO)')
 
 comp_6m <- subset(PCO, PCO$PostOp =='1 Day' | PCO$PostOp =='1 Week' | PCO$PostOp =='1 Month' | PCO$PostOp =='3 Months' | PCO$PostOp =='6 Months')
@@ -3617,61 +1928,49 @@ comptab$BilatPPercentPatients <- round(comptab$`Bilateral PureSee`/total$Eyes[wh
 comptab$MixPercentPatients <- round(comptab$`Mix and Match`/total$Eyes[which(total$SurgeryLens=="Mix and Match")], digits = 4)
 comptab <- comptab %>% arrange(-`Bilateral PureSee`)
 
-#### BCDVA Loss 2+ Comps ####
-comps <- merge(COMP, bcdva_loss_px1, by=c("PatientID", "EyeID"))
-month1 <- subset(comps, comps$PostOp=='1 Month')
-month1 <- month1 %>%
+##### BCDVA Loss 2+ Comps ####
+temp <- merge(COMP, bcdva_loss_px1, by=c("PatientID", "EyeID", "SurgeryLens"))
+month1 <- temp %>%
+  filter(PostOp %in% c("1 Day", "1 Week", "1 Month")) %>%
   select(PatientID, EyeID, Complication, SurgeryLens) %>%
   unique()
 
-month1 <- as.data.frame(table(month1$Complication, month1$SurgeryLens))
-month1$percent <- month1$Freq/(dim(bcdva_loss_px1)[1])
+temptotal <- bcdva_loss_px1 %>%
+  group_by(SurgeryLens) %>%
+  count()
+
 month1 <- month1 %>%
-  arrange(-Freq) %>%
-  slice_head(n=3)
-month1$Tag <- "1 Month"
-
-bcdva_loss_comps1_o <- month1[which(month1$Var2=="Bilateral Odyssey"),]
-bcdva_loss_comps1_p <- month1[which(month1$Var2=="Bilateral PureSee"),]
-bcdva_loss_comps1_m <- month1[which(month1$Var2=="Mix and Match"),]
-
-# #### UCDVA >6/6 PCO ###
-# CID <- data %>% select(PatientID, focal, M3_Binoc_UCDVA_SM)
-# CID <- CID[complete.cases(CID),]
-# month <- CID %>% select(PatientID, focal, M3_Binoc_UCDVA_SM)
-# month <- subset(month, month$focal == "Monofocal")
-# month <- subset(month, month$M3_Binoc_UCDVA_SM == "6/3" | month$M3_Binoc_UCDVA_SM == "6/3.8" | month$M3_Binoc_UCDVA_SM == "6/4" | month$M3_Binoc_UCDVA_SM == "6/4.8" | month$M3_Binoc_UCDVA_SM == "6/5" | month$M3_Binoc_UCDVA_SM == "6/6")
-# 
-# comps <- subset(PCO, PCO$PostOp =='1 Day' | PCO$PostOp =='1 Week' | PCO$PostOp =='1 Month' | PCO$PostOp =='3 Months')
-# month$PCO <- 0
-# month$PCO[which(month$PatientID %in% comps$PatientID)] <- 1
-# 
-# ucdvaPCO <- sum(month$PCO)/dim(month)[1]
+  group_by(Complication,SurgeryLens) %>%
+  count() %>%
+  merge(temptotal,by="SurgeryLens") %>%
+  mutate(percent = n.x/n.y) %>%
+  group_by(SurgeryLens) %>%
+  arrange(desc(percent)) %>%
+  slice_head(n=3) %>%
+  mutate(Tag="1 Month") %>%
+  select(Complication, SurgeryLens, n.x, percent, Tag)
 
 #### GRAPHS ####
 
 graph <- list("Sphere" = sph,
               "MSE" = mse,
               "Cyl" = cyl, 
-              "Pre vs Post UCDVA BO" = prepost_ucdva_o,
-              "Pre vs Post UCDVA BP" = prepost_ucdva_p,
-              "Pre vs Post UCDVA MM" = prepost_ucdva_m,
-              "Pre B vs Post UCDVA BO" = prebpostu_cdva_o,
-              "Pre B vs Post UCDVA BP" = prebpostu_cdva_p,
-              "Pre B vs Post UCDVA MM" = prebpostu_cdva_m,
-              "Pre vs Post BCDVA BO" = prepost_bcdva_o,
-              "Pre vs Post BCDVA BP" = prepost_bcdva_p,
-              "Pre vs Post BCDVA MM" = prepost_bcdva_m,
+              "Pre vs Post UCDVA BO" = prepost_ucdva[which(prepost_ucdva$SurgeryLens=="Bilateral Odyssey"),],
+              "Pre vs Post UCDVA BP" = prepost_ucdva[which(prepost_ucdva$SurgeryLens=="Bilateral PureSee"),],
+              "Pre vs Post UCDVA MM" = prepost_ucdva[which(prepost_ucdva$SurgeryLens=="Mix and Match"),],
+              "Pre B vs Post UCDVA BO" = prebpostu_cdva[which(prebpostu_cdva$SurgeryLens=="Bilateral Odyssey"),],
+              "Pre B vs Post UCDVA BP" = prebpostu_cdva[which(prebpostu_cdva$SurgeryLens=="Bilateral PureSee"),],
+              "Pre B vs Post UCDVA MM" = prebpostu_cdva[which(prebpostu_cdva$SurgeryLens=="Mix and Match"),],
+              "Pre vs Post BCDVA BO" = prepost_bcdva[which(prepost_bcdva$SurgeryLens=="Bilateral Odyssey"),],
+              "Pre vs Post BCDVA BP" = prepost_bcdva[which(prepost_bcdva$SurgeryLens=="Bilateral PureSee"),],
+              "Pre vs Post BCDVA MM" = prepost_bcdva[which(prepost_bcdva$SurgeryLens=="Mix and Match"),],
               "UCDVA Line Change" = ucdva_lc,
               "Binoc UCIVA" = binoc_uciva,
               "UCIVA Line Change" = uciva_lc,
               "Binoc UCNVA" = binoc_ucnva,
-              "UCNVA BO" = ucnva_o,
-              "UCNVA BP" = ucnva_p,
-              "UCNVA MM" = ucnva_m,
-              "UCNVA Monoc BO" = monoc_ucnva_o,
-              "UCNVA Monoc BP" = monoc_ucnva_p,
-              "UCNVA Monoc MM" = monoc_ucnva_m,
+              "UCNVA BO" = ucnva_mb[which(ucnva_mb$SurgeryLens=="Bilateral Odyssey"),],
+              "UCNVA BP" = ucnva_mb[which(ucnva_mb$SurgeryLens=="Bilateral PureSee"),],
+              "UCNVA MM" = ucnva_mb[which(ucnva_mb$SurgeryLens=="Mix and Match"),],
               "UCNVA Line Change" = ucnva_lc,
               "Mean changes" = meanchange,
               "Refractive Pred" = refpred,
@@ -3683,9 +1982,9 @@ graph <- list("Sphere" = sph,
               "Att vs Ach MM" = sach_m1_m,
               "stats MM" = attvach3_m,
               "BCDVA 1M" = bcdva1,
-              "BCDVA loss comps 1 BO" = bcdva_loss_comps1_o,
-              "BCDVA loss comps 1 BP" = bcdva_loss_comps1_p,
-              "BCDVA loss comps 1 MM" = bcdva_loss_comps1_m,
+              "BCDVA loss comps 1 BO" = month1[which(month1$SurgeryLens=="Bilateral Odyssey"),],
+              "BCDVA loss comps 1 BP" = month1[which(month1$SurgeryLens=="Bilateral PureSee"),],
+              "BCDVA loss comps 1 MM" = month1[which(month1$SurgeryLens=="Mix and Match"),],
               "Enhancement" = enh,
               "Latest Enh Date" = latest_enh,
               "PCO" = pcos,
@@ -3695,17 +1994,6 @@ graph <- list("Sphere" = sph,
 
 write.xlsx(graph, paste(path, "/tables/", "CRO Data.xlsx", sep = ""))
 
-# write.xlsx(data, paste(path, "test.xlsx", sep = ""),sheet="test")
-# 
-# 
-# wbpath <- paste(path, "test.xlsx", sep = "")
-# wb <- loadWorkbook(file=wbpath)
-# 
-# 
-# dates <- as.data.frame(cbind(mindate,maxdate))
-# writeData(wb=wb, sheet="test", x=dates, xy=c(1,1))
-# writeData(wb=wb, sheet="test", x=data, xy=c(1,4))
-# saveWorkbook(wb, wbpath, overwrite = TRUE)
 
 
 
