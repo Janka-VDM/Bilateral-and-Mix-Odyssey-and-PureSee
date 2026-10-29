@@ -36,7 +36,7 @@ con <- DBI::dbConnect(odbc::odbc(),
                       Trusted_Connection = "True")
 
 mindate <- '2024-01-01'
-maxdate <- '2026-02-28'
+maxdate <- '2026-09-18'
 
 data1 <- read.xlsx(paste(path,"tables/pxs.xlsx",sep=""))
 data <- data1 #%>% select(PatientID, SurgeryDateTime, SurgeryLens)
@@ -683,90 +683,50 @@ if (dim(test)[1]>0){view(test)
   stop("There are duplicates")}
 
 data <- data %>%
-  mutate(GroupMonocular1 = case_when(M1_UCDVA_LM == "6/3" ~ "6/5 or better",
-                                     M1_UCDVA_SM == "6/3.8" ~ "6/5 or better",
-                                     M1_UCDVA_SM == "6/4" ~ "6/5 or better",
-                                     M1_UCDVA_SM == "6/4.8" ~ "6/5 or better",
-                                     M1_UCDVA_SM == "6/5" ~ "6/5 or better",
-                                     M1_UCDVA_SM == "6/6" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/7.5" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/9" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/9.5" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/10" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/12" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/15" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/18" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/19" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/20" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/21" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/24" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/30" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/34.2" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/36" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/38" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/48" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/60" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/75" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/95" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/120" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "6/240" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "CF" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "HM" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "POL" ~ "6/6 or poorer",
-                                     M1_UCDVA_SM == "NPOL" ~ "6/6 or poorer"))
-
-data <- data %>%
-  mutate(GroupBinocular1 = case_when(M1_Binoc_UCDVA_SM == "6/3" ~ "6/6 or better",
-                                     M1_Binoc_UCDVA_SM == "6/3.8" ~ "6/6 or better",
-                                     M1_Binoc_UCDVA_SM == "6/4" ~ "6/6 or better",
-                                     M1_Binoc_UCDVA_SM == "6/4.8" ~ "6/6 or better",
-                                     M1_Binoc_UCDVA_SM == "6/5" ~ "6/6 or better",
-                                     M1_Binoc_UCDVA_SM == "6/6" ~ "6/6 or better",
-                                     M1_Binoc_UCDVA_SM == "6/7.5" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/9" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/9.5" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/10" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/12" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/15" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/18" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/19" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/20" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/21" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/24" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/30" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/34.2" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/36" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/38" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/48" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/60" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/75" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/95" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/120" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "6/240" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "CF" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "HM" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "POL" ~ "6/7.5 or poorer",
-                                     M1_Binoc_UCDVA_SM == "NPOL" ~ "6/7.5 or poorer"))
+  mutate(M1_UCDVA_LM = case_when(M1_UCDVA_LM=="CF" ~ 1.80,
+                                 M1_UCDVA_LM=="HM" ~ 2.40,
+                                 M1_UCDVA_LM=="POL" ~ 2.70,
+                                 M1_UCDVA_LM=="NPOL" ~ 3.00,
+                                 .default = as.numeric(M1_UCDVA_LM)),
+         M1_Binoc_UCDVA_LM = case_when(M1_Binoc_UCDVA_LM=="CF" ~ 1.80,
+                                       M1_Binoc_UCDVA_LM=="HM" ~ 2.40,
+                                       M1_Binoc_UCDVA_LM=="POL" ~ 2.70,
+                                       M1_Binoc_UCDVA_LM=="NPOL" ~ 3.00,
+                                       .default = as.numeric(M1_Binoc_UCDVA_LM)),
+         GroupMonocular1 = case_when(M1_UCDVA_LM <= -0.08 ~ "6/5 or better",
+                                     M1_UCDVA_LM > -0.08 ~ "6/6 or poorer",
+                                     .default=NA_character_),
+         GroupBinocular1 = case_when(M1_Binoc_UCDVA_LM <= 0 ~ "6/6 or better",
+                                     M1_Binoc_UCDVA_LM > 0 ~ "6/7.5 or poorer",
+                                     .default=NA_character_)
+  )
 
 #### Motivation vs Satisfaction vs Lens ####
 
 if (postopdatemin==20){
-  temp <- read.xlsx('S:\\Clinical Services\\Research Assistants\\Tecnis Odyssey\\Bilateral Odyssey vs Mix PureSee\\tables\\pxsreasons.xlsx')
-  temp <- merge(temp,data %>% select(PatientID, EyeID, M1_Satisfied, SurgeryLens),by=c("PatientID","EyeID"))
+  temp <- read.xlsx(paste(path,"tables/pxsreasons.xlsx", sep=""))
+  temp <- merge(temp,(data %>% distinct(PatientID, M1_Satisfied,M1_UCDVA_LM)),by=c("PatientID"))
   
-  tab1 <- as.data.frame(table(temp$Reason, temp$M1_Satisfied, temp$SurgeryLens)) %>%
-    pivot_wider(names_from="Var2", values_from="Freq") %>%
-    select(Var1, Var3, `Very Satisfied`, Satisfied, Neither, Dissatisfied, `Very Dissatisfied`)
-  tab2 <- as.data.frame(table(temp$Reason[which(temp$M1_UCDVA_LM<=0)], temp$M1_Satisfied[which(temp$M1_UCDVA_LM<=0)], temp$SurgeryLens[which(temp$M1_UCDVA_LM<=0)])) %>%
-    pivot_wider(names_from="Var2", values_from="Freq") %>%
-    select(Var1, Var3, `Very Satisfied`, Satisfied, Neither, Dissatisfied, `Very Dissatisfied`)
+  tab1 <- temp %>%
+    group_by(Reason, M1_Satisfied, SurgeryLens) %>%
+    count() %>%
+    pivot_wider(names_from="M1_Satisfied", values_from="n") %>%
+    select(Reason, SurgeryLens, `Very Satisfied`, Satisfied, Neither, Dissatisfied, `Very Dissatisfied`)
+  
+  tab2 <- temp %>%
+    filter(M1_UCDVA_LM<=0) %>%
+    group_by(Reason, M1_Satisfied, SurgeryLens) %>%
+    count() %>%
+    pivot_wider(names_from="M1_Satisfied", values_from="n") %>%
+    select(Reason, SurgeryLens, `Very Satisfied`, Satisfied, Neither, Dissatisfied, `Very Dissatisfied`)
   
   list <- list("All" = tab1, "UCDVA 6+" = tab2)
-  write.xlsx(list,'S:\\Clinical Services\\Research Assistants\\Tecnis Odyssey\\Bilateral Odyssey vs Mix PureSee\\tables\\pxsreasons_tables.xlsx')
+  write.xlsx(list,paste(path,"tables/pxsreasons_tables.xlsx", sep=""))
 }
 
 #### Working ####
-completionrate <- dim(data[which(is.na(data$M1_Recommend)==FALSE),])[1]/dim(data)[1]
+test <- data[which(is.na(data$M1_SurveyDate)),]
+if(dim(test)[1]>0){stop("There are patients that did not answer the PEQ.")}
 
 u <- data %>%
   select(PatientID, M1_Recommend, M1_Satisfied, M1_DoOver, M1_Glare, M1_Halos, M1_DryEyes, M1_NightDrive, GroupMonocular1, GroupBinocular1, SurgeryLens)
@@ -850,8 +810,7 @@ drive1 <- as.data.frame(table(u1$M1_NightDrive, u1$SurgeryLens))%>%
   pivot_wider(names_from="Var2", values_from="Freq")
 
 #### GRAPHS ####
-graph <- list("Completion Rate" = completionrate,
-              "Recommendation" = rec,
+graph <- list("Recommendation" = rec,
               "Recommendation - Monoc BO" = rec_mono_bo,
               "Recommendation - Monoc BP" = rec_mono_bp,
               "Recommendation - Monoc MM" = rec_mono_m,
@@ -871,10 +830,14 @@ graph <- list("Completion Rate" = completionrate,
               "Night Drive 6" = drive1)
 
 if (isTRUE(postopdatemin==20)==TRUE){
-  write.xlsx(graph, paste(path, "PRO Data 1.xlsx", sep = ""))
+  write.xlsx(graph, paste(path, "tables/PRO Data 1.xlsx", sep = ""))
   print("Month 1 was updated!")
 } else{
-  write.xlsx(graph, paste(path, "PRO Data 3.xlsx", sep = ""))
+  write.xlsx(graph, paste(path, "tables/PRO Data 3.xlsx", sep = ""))
   print("Month 3 was updated!")
 }
-test <- as.data.frame(table(data$PatientID, data$EyeID))
+
+
+
+
+
