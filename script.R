@@ -27,7 +27,7 @@ con <- DBI::dbConnect(odbc::odbc(),
                       Trusted_Connection = "True")
 
 mindate <- '2024-01-01'
-maxdate <- '2026-02-28'
+maxdate <- '2026-09-18'
 surgerytype <- 2
 
 chisq_warns <- function(x, y = NULL, ...) {
@@ -149,6 +149,8 @@ data$Model[which(data$PatientID=="60381493" & data$EyeID=="1")] <- "Rayner Sulco
 data$Target[which(data$PatientID=="63294791")] <- 0
 data$Target[which(data$PatientID=="63323587")] <- 0
 data$Target[which(data$PatientID=="63336246")] <- 0
+data$Keratometry_Power_1[which(data$PatientID=="59562517" & data$EyeID==2)] <- 41.84
+data$Keratometry_Power_2[which(data$PatientID=="59562517" & data$EyeID==2)] <- 43.08
 
 ##### Data Preparation ####
 data$MSE <- round(data$Sphere + (data$Cyl/2), digits = 2)
@@ -297,7 +299,7 @@ data <- merge(data, temp, by=c("PatientID","SurgeryDateTime")) %>% unique()
 
 ##### Data Conditions ####
 data <- data %>% filter(PriorLVC==1)
-# data <- data[which(is.na(data$Complication)),]
+data <- data[which(is.na(data$Complication)),]
 data <- data[which(!is.na(data$Month1PostOp)),]
 data <- data[which(!is.na(data$M1_SurveyDate)),]
 # data <- data[which(data$Age>=45),]
@@ -335,8 +337,8 @@ if (dim(test)[1]>0){
   stop("There are patients who do not have any Motivations.")
 }
 
-write.xlsx(data %>% select(PatientID, EyeID, Reason, M1_Binoc_UCDVA_LM),
-           "S:\\Clinical Services\\Research Assistants\\Tecnis Odyssey\\Bilateral Odyssey vs Mix PureSee\\tables\\pxsreasons.xlsx")
+write.xlsx(data %>% distinct(PatientID, Reason, SurgeryLens, M1_Binoc_UCDVA_LM),
+           paste(path,"tables/pxsreasons.xlsx", sep=""))
 
 ##### quick peq test ####
 cids <- toString(unique(data$PatientID))
@@ -1653,148 +1655,106 @@ write.xlsx(bcdva, paste(path, "/tables/", "1M BCDVA.xlsx", sep = ""))
 
 
 #### Enhancement Rates - Post IOL ####
-total_enh6 <- data %>% #getting total for 6 months ago
+total_6 <- data %>% #getting total for 6 months ago
   filter(SurgeryDateTime <= Sys.Date()-183) %>%
-  distinct(PatientID, EyeID, Surgery) %>%
-  group_by(Surgery) %>%
+  distinct(PatientID, EyeID, SurgeryLens) %>%
+  group_by(SurgeryLens) %>%
+  summarise(Total=n())
+
+total_12 <- data %>% #getting total for 12 months ago
+  filter(SurgeryDateTime <= Sys.Date()-365) %>%
+  distinct(PatientID, EyeID, SurgeryLens) %>%
+  group_by(SurgeryLens) %>%
   summarise(Total=n())
 
 enh6 <- data %>%
   filter(SurgeryDateTime <= Sys.Date()-183) %>%
-  select(PatientID, EyeID, SurgeryDateTime, Surgery, EnhDate, Enh_SurgeryGroup, 
+  select(PatientID, EyeID, SurgeryDateTime, SurgeryLens, EnhDate, Enh_SurgeryGroup, 
          Enh_Surgery) %>%
   filter(!is.na(EnhDate)) %>%
   mutate(DayDiff = as.numeric(EnhDate - SurgeryDateTime)) %>%
   filter(DayDiff > 90 & DayDiff <= 183) %>%
-  distinct(PatientID, EyeID, Surgery) %>%
-  group_by(Surgery) %>%
+  distinct(PatientID, EyeID, SurgeryLens) %>%
+  group_by(SurgeryLens) %>%
   count() %>%
-  merge(total_enh6,by="Surgery") %>%
+  merge(total_6,by="SurgeryLens") %>%
   mutate(Percent = n/Total,
          Tag = "Within 6 Months") %>%
-  select(Surgery, Tag, Percent)
-
-enh6_p <- data %>%
-  filter(SurgeryDateTime <= Sys.Date()-183) %>%
-  select(PatientID, EyeID, SurgeryDateTime, Surgery, EnhDate, Enh_SurgeryGroup, 
-         Enh_Surgery) %>%
-  mutate(DayDiff = as.numeric(EnhDate - SurgeryDateTime)) %>%
-  filter((DayDiff > 90 & DayDiff <= 183) | is.na(DayDiff)) %>%
-  mutate(Enhanced = case_when(!is.na(DayDiff) ~ 1, .default=0)) %>%
-  summarise(chi = chisq_test(Enhanced, Surgery)$p,
-            chisq_warning = chisq_warns(Enhanced, Surgery),
-            fisher = fisher.test(Enhanced, Surgery)$p.value)
-
-total_enh12 <- data %>% #getting total for 12 months ago
-  filter(SurgeryDateTime <= Sys.Date()-365) %>%
-  distinct(PatientID, EyeID, Surgery) %>%
-  group_by(Surgery) %>%
-  summarise(Total=n())
+  select(SurgeryLens, Tag, Percent)
 
 enh12 <- data %>%
   filter(SurgeryDateTime <= Sys.Date()-365) %>%
-  select(PatientID, EyeID, SurgeryDateTime, Surgery, EnhDate, Enh_SurgeryGroup, 
+  select(PatientID, EyeID, SurgeryDateTime, SurgeryLens, EnhDate, Enh_SurgeryGroup, 
          Enh_Surgery) %>%
   filter(!is.na(EnhDate)) %>%
   mutate(DayDiff = as.numeric(EnhDate - SurgeryDateTime)) %>%
   filter(DayDiff > 90 & DayDiff <= 365) %>%
-  distinct(PatientID, EyeID, Surgery) %>%
-  group_by(Surgery) %>%
+  distinct(PatientID, EyeID, SurgeryLens) %>%
+  group_by(SurgeryLens) %>%
   count() %>%
-  merge(total_enh12,by="Surgery") %>%
+  merge(total_12,by="SurgeryLens") %>%
   mutate(Percent = n/Total,
          Tag = "Within 1 Year") %>%
-  select(Surgery, Tag, Percent)
+  select(SurgeryLens, Tag, Percent)
 
-enh1 <- rbind(enh6 ,enh12)
+enh <- rbind(enh6 ,enh12) %>%
+  pivot_wider(names_from="Tag", values_from="Percent")
 
-enh <- data %>% select(PatientID, EyeID, SurgeryLens, SurgeryDateTime, Surgery, EnhDate, Enh_SurgeryGroup, Enh_Surgery)
 
-enh <- enh[which(!is.na(enh$EnhDate)),]
-enh <- enh[which(enh$Enh_SurgeryGroup!="YAG"),]
-enh$DayDiff <- as.numeric(difftime(as.Date(enh$EnhDate), as.Date(enh$SurgeryDateTime),units="days"))
-enh <- enh[which(enh$DayDiff>0),]
+enh6_p <- data %>%
+  filter(SurgeryDateTime <= Sys.Date()-183) %>%
+  select(PatientID, EyeID, SurgeryDateTime, SurgeryLens, EnhDate, Enh_SurgeryGroup, 
+         Enh_Surgery) %>%
+  mutate(DayDiff = as.numeric(EnhDate - SurgeryDateTime)) %>%
+  filter((DayDiff > 90 & DayDiff <= 183) | is.na(DayDiff)) %>%
+  mutate(Enhanced = case_when(!is.na(DayDiff) ~ 1, .default=0)) %>%
+  summarise(chi = chisq_test(Enhanced, SurgeryLens)$p,
+            chisq_warning = chisq_warns(Enhanced, SurgeryLens),
+            fisher = fisher.test(Enhanced, SurgeryLens)$p.value)
 
-test <- enh %>%
-  filter(DayDiff > 90 & DayDiff <= 365) #Within 1 Year
-test6m <- enh %>%
-  filter(DayDiff > 90 & DayDiff <= 183) #Within 6 Months
+enh12_p <- data %>%
+  filter(SurgeryDateTime <= Sys.Date()-365) %>%
+  select(PatientID, EyeID, SurgeryDateTime, SurgeryLens, EnhDate, Enh_SurgeryGroup, 
+         Enh_Surgery) %>%
+  mutate(DayDiff = as.numeric(EnhDate - SurgeryDateTime)) %>%
+  filter((DayDiff > 90 & DayDiff <= 365) | is.na(DayDiff)) %>%
+  mutate(Enhanced = case_when(!is.na(DayDiff) ~ 1, .default=0)) %>%
+  summarise(chi = chisq_test(Enhanced, SurgeryLens)$p,
+            chisq_warning = chisq_warns(Enhanced, SurgeryLens),
+            fisher = fisher.test(Enhanced, SurgeryLens)$p.value)
 
-latest_enh <- test %>%
-  filter(EnhDate==max(EnhDate)) %>%
-  select(EnhDate, DayDiff)
 
-total <- rbind(totalo, totalp, totalm)
-total <- cbind(total, c("Bilateral Odyssey", "Bilateral PureSee", "Mix and Match")) %>%
-  rename("SurgeryLens" = "c(\"Bilateral Odyssey\", \"Bilateral PureSee\", \"Mix and Match\")")
-
-enh_6m <- test6m %>%
-  group_by(SurgeryLens) %>%
-  summarise(Freq = n())
-enh_6m <- merge(enh_6m, total, by="SurgeryLens")
-enh_6m$percent <- round(enh_6m$Freq/enh_6m$Eyes, digits = 6)
-enh_6m$Tag <- "Within 6 Months"
-enh_6m <- enh_6m %>%
-  select(SurgeryLens, percent,Tag)
-
-enh_1y <- test %>%
-  group_by(SurgeryLens) %>%
-  summarise(Freq = n())
-enh_1y <- merge(enh_1y, total, by="SurgeryLens")
-enh_1y$percent <- round(enh_1y$Freq/enh_1y$Eyes, digits = 6)
-enh_1y$Tag <- "Within 1 Year"
-enh_1y <- enh_1y %>%
-  select(SurgeryLens, percent,Tag)
-
-enh <- rbind(enh_6m, enh_1y)
-enh <- enh %>%
-  pivot_wider(names_from = "Tag", values_from = "percent")
-
-# ## Exchanges ###
-# exch <- data[grep("Exchange", data$Enh_Surgery), ]
-# exch$ExDateDiff <- difftime(exch$EnhDate,exch$SurgeryDateTime, units = "days")
-# 
-# exch <- exch[which(exch$ExDateDiff>90), ]
-# exch$DateDiff<-NA
-# exch$DateDiff[which(exch$ExDateDiff>365)] <- "Over 12 Months"
-# exch$DateDiff[which(exch$ExDateDiff>183 & exch$ExDateDiff<=365)] <- "Within 12 Months"
-# exch$DateDiff[which(exch$ExDateDiff<=183)] <- "Within 6 Months"
-# 
-# if (dim(exch)[1] > dim(exch[which(!is.na(exch$Enh_Model)), ])[1] ){
-#   print("WARNING: There are NA's in the Enhancement Models.")
-# }
-# 
-# exch <- as.data.frame(table(exch$Model, exch$Enh_Model))
-# exch <- exch[which(exch$Freq>0),]
-# exch$Percent <- exch$Freq/total[1,2]
-# colnames(exch) <- c("Primary Lens", "Exchange Lens", "Freq", )
-# 
 #### YAGS ####
-yags <- data[grep("YAG", data$Enh_SurgeryGroup), ]
-
-yags$DayDiff <- difftime(yags$EnhDate,yags$SurgeryDateTime, units = "days")
-
-test <- yags %>%
-  filter(DayDiff > 90 & DayDiff <= 365) #Within 1 Year
-test6m <- yags %>%
-  filter(DayDiff > 90 & DayDiff <= 183) #Within 6 Months
-
-yags_6m <- test6m %>%
+yag6 <- data %>%
+  filter(SurgeryDateTime <= Sys.Date()-183) %>%
+  select(PatientID, EyeID, SurgeryDateTime, SurgeryLens, YagDate) %>%
+  filter(!is.na(YagDate)) %>%
+  mutate(DayDiff = as.numeric(YagDate - SurgeryDateTime)) %>%
+  filter(DayDiff > 90 & DayDiff <= 183) %>%
+  distinct(PatientID, EyeID, SurgeryLens) %>%
   group_by(SurgeryLens) %>%
-  summarise(Freq=n()) %>%
-  left_join(total, by="SurgeryLens") %>%
-  mutate(percent=Freq/Eyes, Tag="Within 6 Months") %>%
-  select(SurgeryLens,percent,Tag)
+  count() %>%
+  merge(total_6,by="SurgeryLens") %>%
+  mutate(Percent = n/Total,
+         Tag = "Within 6 Months") %>%
+  select(SurgeryLens, Tag, Percent)
 
-yags_1y <- test %>%
+yag12 <- data %>%
+  filter(SurgeryDateTime <= Sys.Date()-365) %>%
+  select(PatientID, EyeID, SurgeryDateTime, SurgeryLens, YagDate) %>%
+  filter(!is.na(YagDate)) %>%
+  mutate(DayDiff = as.numeric(YagDate - SurgeryDateTime)) %>%
+  filter(DayDiff > 90 & DayDiff <= 365) %>%
+  distinct(PatientID, EyeID, SurgeryLens) %>%
   group_by(SurgeryLens) %>%
-  summarise(Freq=n()) %>%
-  left_join(total, by="SurgeryLens") %>%
-  mutate(percent=Freq/Eyes, Tag="Within 1 Year") %>%
-  select(SurgeryLens,percent,Tag)
+  count() %>%
+  merge(total_12,by="SurgeryLens") %>%
+  mutate(Percent = n/Total,
+         Tag = "Within 1 Year") %>%
+  select(SurgeryLens, Tag, Percent)
 
-yags <- rbind(yags_6m, yags_1y)%>%
-  pivot_wider(names_from = "SurgeryLens", values_from = "percent")
+yags <- rbind(yag6,yag12) %>%
+  pivot_wider(names_from="SurgeryLens", values_from="Percent")
 
 #### Complications ####
 sid <- toString(unique(data$SurgeryID))
@@ -1881,38 +1841,46 @@ COMP <- merge(COMP, remove, by="Complication",all.x=TRUE)
 COMP$Diff <- difftime(COMP$PostOpDateTime, COMP$SurgeryDateTime)
 COMP <- COMP %>%
   filter(Diff <= `Timeline 2` & Diff >= `Timeline 1`) %>%
-  select(PatientID, EyeID, SurgeryLens, Complication, PostOp) %>%
-  unique()
+  distinct(PatientID, EyeID, SurgeryDateTime, SurgeryLens, Complication, PostOpDateTime, PostOp)
 
 ##### PCO's ####
-PCO <- subset(COMP, COMP$Complication=='Posterior Capsular Opacification (PCO)')
+temp <- merge(data,COMP)
+pcos <- COMP %>%
+  filter(Complication=='Posterior Capsular Opacification (PCO)') %>%
+  group_by(PatientID) %>%
+  arrange(PostOpDateTime) %>%
+  slice_head(n=1)
+  
+pco6 <- pcos %>%
+  filter(PostOp %in% c("1 Month", "3 Months", "6 Months")) %>%
+  distinct(PatientID, EyeID, SurgeryLens) %>%
+  group_by(SurgeryLens) %>%
+  count() %>%
+  merge(total_6,by="SurgeryLens") %>%
+  mutate(Percent = n/Total,
+         Tag = "Within 6 Months") %>%
+  select(SurgeryLens, Tag, Percent)
 
-comp_6m <- subset(PCO, PCO$PostOp =='1 Day' | PCO$PostOp =='1 Week' | PCO$PostOp =='1 Month' | PCO$PostOp =='3 Months' | PCO$PostOp =='6 Months')
-comp_6m <- comp_6m %>%
-  select(PatientID, EyeID, Complication, SurgeryLens) %>%
-  unique()
-comp_6m$Tag <- 'Within 6 Months'
+pco12 <- pcos %>%
+  filter(PostOp %in% c("1 Month", "3 Months", "6 Months", "12 Months")) %>%
+  distinct(PatientID, EyeID, SurgeryLens) %>%
+  group_by(SurgeryLens) %>%
+  count() %>%
+  merge(total_6,by="SurgeryLens") %>%
+  mutate(Percent = n/Total,
+         Tag = "Within 1 Year") %>%
+  select(SurgeryLens, Tag, Percent)
 
-comp_1y <- subset(PCO, PCO$PostOp =='1 Day' | PCO$PostOp =='1 Week' | PCO$PostOp =='1 Month' | PCO$PostOp =='3 Months' | PCO$PostOp =='6 Months' | PCO$PostOp =='12 Months')
-comp_1y <- comp_1y %>%
-  select(PatientID, EyeID, Complication, SurgeryLens) %>%
-  unique()
-comp_1y$Tag <- 'Within 1 Year'
+pcos <- rbind(pco6,pco12) %>%
+  pivot_wider(names_from="SurgeryLens", values_from="Percent") %>%
+  select(Tag, `Bilateral Odyssey`, `Bilateral PureSee`, `Mix and Match`)
 
-pcos <- rbind(comp_6m, comp_1y)
-pcos <- as.data.frame(table(pcos$Tag, pcos$SurgeryLens)) %>%
-  pivot_wider(names_from="Var2", values_from="Freq") %>%
-  adorn_totals("col")
-pcos$BilatOPercent <- round(pcos$`Bilateral Odyssey`/pcos$Total, digits = 4)
-pcos$BilatPPercent <- round(pcos$`Bilateral PureSee`/pcos$Total, digits = 4)
-pcos$MixPercent <- round(pcos$`Mix and Match`/pcos$Total, digits = 4)
-pcos$BilatOPercentPatients <- round(pcos$`Bilateral Odyssey`/total$Eyes[which(total$SurgeryLens=="Bilateral Odyssey")], digits = 4)
-pcos$BilatPPercentPatients <- round(pcos$`Bilateral PureSee`/total$Eyes[which(total$SurgeryLens=="Bilateral PureSee")], digits = 4)
-pcos$MixPercentPatients <- round(pcos$`Mix and Match`/total$Eyes[which(total$SurgeryLens=="Mix and Match")], digits = 4)
-pcos <- pcos %>%
-  select(-`Bilateral Odyssey`, -`Bilateral PureSee`, -`Mix and Match`, -Total)
 
-# Complications table
+##### Complications table ####
+total <- rbind(totalo, totalp, totalm)
+total <- cbind(total, c("Bilateral Odyssey", "Bilateral PureSee", "Mix and Match")) %>%
+  rename("SurgeryLens" = "c(\"Bilateral Odyssey\", \"Bilateral PureSee\", \"Mix and Match\")")
+
 comptab <- COMP %>%
   select(PatientID, EyeID, SurgeryLens, Complication) %>%
   unique() %>%
@@ -1986,7 +1954,8 @@ graph <- list("Sphere" = sph,
               "BCDVA loss comps 1 BP" = month1[which(month1$SurgeryLens=="Bilateral PureSee"),],
               "BCDVA loss comps 1 MM" = month1[which(month1$SurgeryLens=="Mix and Match"),],
               "Enhancement" = enh,
-              "Latest Enh Date" = latest_enh,
+              "N 6" = total_6,
+              "N 12" = total_12,
               "PCO" = pcos,
               "YAGS" = yags,
               "Complications Table" = comptab
