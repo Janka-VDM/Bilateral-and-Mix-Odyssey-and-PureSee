@@ -106,6 +106,8 @@ enh.DescriptionEnGB AS Enh_SurgeryGroup,
 enh.Surgery as Enh_Surgery,
 enh.Enh_Model,
 
+yag.SurgeryDateTime as YagDate,
+
 /* Exchanges */
 exch.SurgeryDateTime AS ExchDate,
 exch.DescriptionEnGB AS Exch_SurgeryGroup,
@@ -453,9 +455,32 @@ OUTER APPLY
   AND su.SurgeryDateTime >= s.SurgeryDateTime 
   AND su.IsDeleted = 0
   and lstt_enh.SurgeryTreatmentTypeID = 2
-  and lstg_enh.SurgeryTypeGroupID in (1,2,11) -- LVC, IOL, and YAG
+  and lstg_enh.SurgeryTypeGroupID in (1) -- LVC
   ORDER BY su.SurgeryID DESC
 ) AS Enh
+
+OUTER APPLY
+(
+  SELECT TOP 1 su.SurgeryID, lstg_enh.DescriptionEnGB, lstt_enh.SurgeryTreatmentTypeID, lst_enh.DescriptionEnGB AS Surgery,
+  lstg_enh.SurgeryTypeGroupID, su.SurgeryDateTime, epe_enh.Sphere, epe_enh.Cyl, lil_enh.DescriptionEnGB as Enh_Model
+  FROM emr.dbo.tSurgery su
+  
+  LEFT JOIN EMR.dbo.tEyeSurgery AS es_enh ON es_enh.SurgeryID = su.SurgeryID
+  LEFT JOIN EMR.dbo.tEyeSurgeryEye AS ese_enh ON ese_enh.SurgeryID = su.SurgeryID AND ese_enh.EyeID = ese.EyeID
+  LEFT JOIN EMR.dbo.tEyePrescriptionEye AS epe_enh ON epe_enh.EyePrescriptionID = es_enh.TreatedEyePrescriptionID AND epe_enh.EyeID = ese.EyeID
+  LEFT JOIN EMR.dbo.tLookupSurgeryTreatmentType AS lstt_enh ON lstt_enh.SurgeryTreatmentTypeID = ese_enh.SurgeryTreatmentTypeID
+  LEFT JOIN EMR.dbo.tLookupSurgeryType AS lst_enh ON lst_enh.SurgeryTypeID = ese_enh.SurgeryTypeID
+  LEFT JOIN EMR.dbo.tLookupSurgeryTypeGroup AS lstg_enh ON lstg_enh.SurgeryTypeGroupID = lst_enh.SurgeryTypeGroupID
+  Left Join EMR.dbo.tEyeSurgeryEyeIOL ESEI_enh On ESEI_enh.SurgeryID = su.SurgeryID and ESEI_enh.EyeID = ese_enh.EyeID
+  LEFT JOIN EMR.dbo.tIOLLensCalculation AS ilc_enh ON ilc_enh.IOLLensCalculationID = ESEI_enh.Type1IOLLensCalculationID
+  LEFT JOIN EMR.dbo.tLookupIOLLens AS lil_enh ON lil_enh.IOLLensID = ilc_enh.IOLLensID
+  
+  WHERE su.PatientID = s.PatientID
+  AND su.SurgeryDateTime >= s.SurgeryDateTime 
+  AND su.IsDeleted = 0
+  and lstg_enh.SurgeryTypeGroupID in (11) -- YAG
+  ORDER BY su.SurgeryID DESC
+) AS Yag
 
 OUTER APPLY
 (
@@ -591,6 +616,8 @@ Survey.SurveyDate as M1_SurveyDate,
 enh.DescriptionEnGB AS Enh_SurgeryGroup,
 enh.Surgery as Enh_Surgery,
 enh.Enh_Model,
+
+yag.SurgeryDateTime as YagDate,
 
 /* Exchanges */
 exch.SurgeryDateTime AS ExchDate,
@@ -921,9 +948,32 @@ OUTER APPLY
   AND su.SurgeryDateTime >= s.SurgeryDateTime 
   AND su.IsDeleted = 0
   and lstt_enh.SurgeryTreatmentTypeID = 2
-  and lstg_enh.SurgeryTypeGroupID in (1,2,11) -- LVC, IOL, and YAG
+  and lstg_enh.SurgeryTypeGroupID in (1) -- LVC
   ORDER BY su.SurgeryID DESC
 ) AS Enh
+
+OUTER APPLY
+(
+  SELECT TOP 1 su.SurgeryID, lstg_enh.DescriptionEnGB, lstt_enh.SurgeryTreatmentTypeID, lst_enh.DescriptionEnGB AS Surgery,
+  lstg_enh.SurgeryTypeGroupID, su.SurgeryDateTime, epe_enh.Sphere, epe_enh.Cyl, lil_enh.DescriptionEnGB as Enh_Model
+  FROM emr.dbo.tSurgery su
+  
+  LEFT JOIN EMR.dbo.tEyeSurgery AS es_enh ON es_enh.SurgeryID = su.SurgeryID
+  LEFT JOIN EMR.dbo.tEyeSurgeryEye AS ese_enh ON ese_enh.SurgeryID = su.SurgeryID AND ese_enh.EyeID = ese.EyeID
+  LEFT JOIN EMR.dbo.tEyePrescriptionEye AS epe_enh ON epe_enh.EyePrescriptionID = es_enh.TreatedEyePrescriptionID AND epe_enh.EyeID = ese.EyeID
+  LEFT JOIN EMR.dbo.tLookupSurgeryTreatmentType AS lstt_enh ON lstt_enh.SurgeryTreatmentTypeID = ese_enh.SurgeryTreatmentTypeID
+  LEFT JOIN EMR.dbo.tLookupSurgeryType AS lst_enh ON lst_enh.SurgeryTypeID = ese_enh.SurgeryTypeID
+  LEFT JOIN EMR.dbo.tLookupSurgeryTypeGroup AS lstg_enh ON lstg_enh.SurgeryTypeGroupID = lst_enh.SurgeryTypeGroupID
+  Left Join EMR.dbo.tEyeSurgeryEyeIOL ESEI_enh On ESEI_enh.SurgeryID = su.SurgeryID and ESEI_enh.EyeID = ese_enh.EyeID
+  LEFT JOIN EMR.dbo.tIOLLensCalculation AS ilc_enh ON ilc_enh.IOLLensCalculationID = ESEI_enh.Type1IOLLensCalculationID
+  LEFT JOIN EMR.dbo.tLookupIOLLens AS lil_enh ON lil_enh.IOLLensID = ilc_enh.IOLLensID
+  
+  WHERE su.PatientID = s.PatientID
+  AND su.SurgeryDateTime >= s.SurgeryDateTime 
+  AND su.IsDeleted = 0
+  and lstg_enh.SurgeryTypeGroupID in (11) -- YAG
+  ORDER BY su.SurgeryID DESC
+) AS Yag
 
 OUTER APPLY
 (
